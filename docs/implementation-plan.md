@@ -117,6 +117,13 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 
 **Dependencies:** none; independent of unresolved progression rules.
 
+**Status:** complete. Reviewed the existing dependency-free card/deck package and
+added explicit two-player and twenty-four-player initial-deal cases. Verified
+deterministic shuffling, card preservation, successive deals, invalid-request
+atomicity, and independent hand/snapshot storage. Fresh runs of
+`go test ./internal/game -cover -count=1` (100% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed.
+
 **Acceptance criteria:**
 
 - Retain a minimal Go module with no infrastructure dependencies in the engine.
