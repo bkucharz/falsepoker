@@ -139,6 +139,14 @@ atomicity, and independent hand/snapshot storage. Fresh runs of
 
 **Dependencies:** 0.1, 1.1.
 
+**Status:** complete. Added all eleven bid categories, exact parameter validation,
+and strict raise comparison with suit-independent ordering. Table-driven tests
+cover every category pairing, primary/secondary rank ordering, equal bids, suit
+changes, highest-category bids, and invalid parameters on either comparison input.
+Fresh runs of `go test ./internal/game -cover -count=1` (100% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Claim evaluation is deferred
+to tasks 1.3 and 1.4.
+
 **Acceptance criteria:**
 
 - Represent all eleven documented categories and their permitted parameters.
