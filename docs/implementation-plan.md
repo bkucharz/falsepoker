@@ -351,6 +351,23 @@ in tasks 2.2, 2.3, and 3.4 respectively; no networking or storage was added.
 
 **Dependencies:** 2.1.
 
+**Status:** complete. Added `Room.View` with explicit `RoomView`, `GameView`, and
+`PlayerView` types, retaining the lobby-only `Room.Snapshot` API. Membership checks,
+role selection, and view construction share the room mutex. Active participants
+receive only their own bidding hands; spectators, including eliminated players,
+receive survivors' hands. Resolution reveals all dealt cards, including departed
+players' cards, and completed-round results remain public after redealing. Views
+include game/round identity, phases, fixed seats, dealt counts versus required hand
+sizes, turn/starter, last bid/result, and winner; they exclude the undealt deck and
+credentials. Roles are recomputed for each view and new game. Mutable view data is
+detached from the engine and other recipients. Table-driven and concurrent tests
+cover lobby/access errors, bidding, resolution, redealing, elimination, challenge
+and departure wins, admin-independent visibility, replay access reset, serialized
+card privacy, and ownership. Fresh runs of
+`go test -race ./internal/room/... -cover -count=1` (97.8% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Gameplay forwarding and
+notifications remain in 2.3; the spectator hold-to-peek control belongs to the UI.
+
 **Acceptance criteria:**
 
 - Explicit view types expose public room/game state and the recipient's authorized
