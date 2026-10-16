@@ -117,6 +117,13 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 
 **Dependencies:** none; independent of unresolved progression rules.
 
+**Status:** complete. Reviewed the existing dependency-free card/deck package and
+added explicit two-player and twenty-four-player initial-deal cases. Verified
+deterministic shuffling, card preservation, successive deals, invalid-request
+atomicity, and independent hand/snapshot storage. Fresh runs of
+`go test ./internal/game -cover -count=1` (100% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed.
+
 **Acceptance criteria:**
 
 - Retain a minimal Go module with no infrastructure dependencies in the engine.
@@ -131,6 +138,14 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 ### 1.2 — Model and compare bids
 
 **Dependencies:** 0.1, 1.1.
+
+**Status:** complete. Added all eleven bid categories, exact parameter validation,
+and strict raise comparison with suit-independent ordering. Table-driven tests
+cover every category pairing, primary/secondary rank ordering, equal bids, suit
+changes, highest-category bids, and invalid parameters on either comparison input.
+Fresh runs of `go test ./internal/game -cover -count=1` (100% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Claim evaluation is covered
+separately by tasks 1.3 and 1.4.
 
 **Acceptance criteria:**
 
@@ -148,6 +163,15 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 
 **Dependencies:** 1.2.
 
+**Status:** complete. Added `Bid.IsSatisfiedBy` for high card, pair, two pairs,
+three of a kind, full house, and four of a kind over the union of dealt cards.
+Evaluation validates bids and physical cards, rejects duplicates, checks the
+exact claimed ranks, accepts surplus matches, and leaves input unchanged.
+Table-driven tests include empty/insufficient unions and combinations split across
+hands. Fresh runs of `go test ./internal/game -cover -count=1` (100% statement
+coverage), `go test ./... -count=1`, and `go vet ./...` passed at completion of
+this task. The same evaluator now supports sequence/suit claims through task 1.4.
+
 **Acceptance criteria:**
 
 - Evaluate high card, pair, two pairs, three of a kind, full house, and four of a
@@ -163,6 +187,16 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 
 **Dependencies:** 1.2, 1.3.
 
+**Status:** complete. Extended `Bid.IsSatisfiedBy` to low/high straights, ordinary
+flushes, straight flushes, and royal straight flushes; removed the temporary
+unsupported-category error. Shared rank/suit counts check exact sequences and
+named suits, while any five of a named suit satisfy an ordinary flush.
+Table-driven tests cover all suits, every missing sequence rank, wrong-suit
+substitutions, surplus cards, both straights in one union, all six suited cards,
+empty unions, invalid input, and card-order independence. Fresh runs of
+`go test ./internal/game -cover -count=1` (98.8% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed.
+
 **Acceptance criteria:**
 
 - Evaluate low straight 9–K, high straight 10–A, flush, straight flush 9–K,
@@ -177,6 +211,20 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 ### 1.5 — Initialize rounds and enforce bidding turns
 
 **Dependencies:** 0.1, 1.2.
+
+**Status:** complete. Added private game state, stable participant IDs and seat
+order, explicit game/round phases, round-one initialization with injected
+randomness, and the approved elimination limit for every supported player count.
+`PlaceBid` records opening bids/strict raises and advances past eliminated seats;
+`ValidateChallenge` checks eligibility without resolving a challenge. Copied
+snapshots expose full state only to trusted domain callers. Table-driven tests
+cover configuration errors, turn order/wraparound, eliminated/unknown actors,
+legal bluffs, invalid/equal/lower/suit-only raises, challenge eligibility, snapshot
+ownership, and rejection without state mutation. Fresh runs of
+`go test ./internal/game -cover -count=1` (97.5% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Challenge resolution and
+round progression are covered separately in tasks 1.6–1.7; room/admin/readiness policies remain
+outside the engine.
 
 **Acceptance criteria:**
 
@@ -194,6 +242,18 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 
 **Dependencies:** 1.3, 1.4, 1.5.
 
+**Status:** complete. Added `Game.Challenge` to evaluate only the preceding bid
+against the current dealt union, retaining per-player revealed hands, challenger,
+bidder/claim, outcome, loser, round ID, and the completed round's limit. Resolution
+applies one penalty or elimination, respects withdrawn bidders without additional
+penalties, and identifies an immediate winner after terminal elimination. Copied
+results protect authoritative state. Tests cover true/false claims, all categories
+across hands, undealt-card exclusion, current-limit boundaries, withdrawn cards,
+repeat/out-of-turn/inactive challenges, terminal games, evaluation-error atomicity,
+and result ownership. Fresh runs of `go test ./internal/game -cover -count=1`
+(97.6% statement coverage), `go test ./... -count=1`, and `go vet ./...` passed.
+Next-round advancement, redealing, and public withdrawal commands are covered in 1.7.
+
 **Acceptance criteria:**
 
 - A valid challenge evaluates only the immediately preceding bid and the current
@@ -210,6 +270,20 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 ### 1.7 — Advance rounds, eliminate players, and finish games
 
 **Dependencies:** 0.1, 0.2, 1.6.
+
+**Status:** complete. Added `Game.NextRound` with designated-starter authorization,
+full-deck shuffling/redealing using injected randomness, survivor-only hands,
+round/limit updates, cleared bidding state, and preservation of the last result.
+`GameState.NextStarter` identifies who may advance a resolution. `Game.Withdraw`
+retains current cards and bids, skips departed seats, transfers pending starter
+responsibility, excludes departures from future deals, and finishes immediately
+when one participant remains. Rejected actions preserve state. Deterministic
+complete-game tests cover player-count/limit boundaries from two to twenty-four
+participants, penalties/eliminations, card conservation, hand sizes, turn order,
+and terminal-action rejection. Additional tests cover true/false withdrawn bids,
+limit recalculation, successive starter departures, and randomness injection.
+Fresh runs of `go test ./internal/game -cover -count=1` (97.7% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed.
 
 **Acceptance criteria:**
 
@@ -232,6 +306,9 @@ in Go tests, without HTTP, WebSockets, storage, or a frontend.
 
 **Phase gate:** all engine tasks pass and a complete scripted game reaches a winner
 before any networking implementation begins.
+
+**Gate status:** passed. Tasks 1.1–1.7 are complete; scripted games reach a winner
+through the pure Go API without networking, storage, timers, or a frontend.
 
 ## Phase 2 — Coordinate rooms in memory
 
