@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"falsepoker/internal/game"
+	"github.com/bkucharz/falsepoker/internal/game"
 )
 
 // Ordered explicitly by the documented hierarchy, rather than enum values.

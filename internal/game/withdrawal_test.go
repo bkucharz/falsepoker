@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"falsepoker/internal/game"
+	"github.com/bkucharz/falsepoker/internal/game"
 )
 
 func TestWithdrawDuringBidding(t *testing.T) {

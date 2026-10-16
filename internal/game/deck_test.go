@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"falsepoker/internal/game"
+	"github.com/bkucharz/falsepoker/internal/game"
 )
 
 func TestNewDeck(t *testing.T) {

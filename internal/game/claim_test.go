@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"falsepoker/internal/game"
+	"github.com/bkucharz/falsepoker/internal/game"
 )
 
 func TestRankClaims(t *testing.T) {

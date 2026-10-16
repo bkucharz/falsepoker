@@ -1,3 +1,3 @@
-module falsepoker
+module github.com/bkucharz/falsepoker
 
-go 1.27
+go 1.27.1

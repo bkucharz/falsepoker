@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"falsepoker/internal/game"
+	"github.com/bkucharz/falsepoker/internal/game"
 )
 
 func TestNextRoundRedealsSurvivors(t *testing.T) {
