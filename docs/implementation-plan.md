@@ -252,7 +252,7 @@ across hands, undealt-card exclusion, current-limit boundaries, withdrawn cards,
 repeat/out-of-turn/inactive challenges, terminal games, evaluation-error atomicity,
 and result ownership. Fresh runs of `go test ./internal/game -cover -count=1`
 (97.6% statement coverage), `go test ./... -count=1`, and `go vet ./...` passed.
-Next-round advancement, redealing, and public withdrawal commands remain in 1.7.
+Next-round advancement, redealing, and public withdrawal commands are covered in 1.7.
 
 **Acceptance criteria:**
 
@@ -270,6 +270,20 @@ Next-round advancement, redealing, and public withdrawal commands remain in 1.7.
 ### 1.7 — Advance rounds, eliminate players, and finish games
 
 **Dependencies:** 0.1, 0.2, 1.6.
+
+**Status:** complete. Added `Game.NextRound` with designated-starter authorization,
+full-deck shuffling/redealing using injected randomness, survivor-only hands,
+round/limit updates, cleared bidding state, and preservation of the last result.
+`GameState.NextStarter` identifies who may advance a resolution. `Game.Withdraw`
+retains current cards and bids, skips departed seats, transfers pending starter
+responsibility, excludes departures from future deals, and finishes immediately
+when one participant remains. Rejected actions preserve state. Deterministic
+complete-game tests cover player-count/limit boundaries from two to twenty-four
+participants, penalties/eliminations, card conservation, hand sizes, turn order,
+and terminal-action rejection. Additional tests cover true/false withdrawn bids,
+limit recalculation, successive starter departures, and randomness injection.
+Fresh runs of `go test ./internal/game -cover -count=1` (97.7% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed.
 
 **Acceptance criteria:**
 
@@ -292,6 +306,9 @@ Next-round advancement, redealing, and public withdrawal commands remain in 1.7.
 
 **Phase gate:** all engine tasks pass and a complete scripted game reaches a winner
 before any networking implementation begins.
+
+**Gate status:** passed. Tasks 1.1–1.7 are complete; scripted games reach a winner
+through the pure Go API without networking, storage, timers, or a frontend.
 
 ## Phase 2 — Coordinate rooms in memory
 

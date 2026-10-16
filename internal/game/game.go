@@ -77,6 +77,7 @@ type GameState struct {
 	RoundID          uint64
 	EliminationLimit int
 	Starter          PlayerID
+	NextStarter      PlayerID
 	CurrentPlayer    PlayerID
 	Players          []PlayerState
 	LastBid          *PlacedBid
@@ -93,6 +94,7 @@ type Game struct {
 	roundID          uint64
 	eliminationLimit int
 	starter          PlayerID
+	nextStarter      PlayerID
 	players          []PlayerState
 	turn             int
 	lastBid          *PlacedBid
@@ -163,6 +165,7 @@ func (g *Game) State() GameState {
 		RoundID:          g.roundID,
 		EliminationLimit: g.eliminationLimit,
 		Starter:          g.starter,
+		NextStarter:      g.nextStarter,
 		Winner:           g.winner,
 		Players:          make([]PlayerState, len(g.players)),
 	}
@@ -211,13 +214,7 @@ func (g *Game) PlaceBid(actor PlayerID, bid Bid) error {
 		}
 	}
 	g.lastBid = &PlacedBid{PlayerID: actor, Bid: bid}
-	for offset := 1; offset <= len(g.players); offset++ {
-		next := (g.turn + offset) % len(g.players)
-		if !g.players[next].Eliminated && !g.players[next].Withdrawn {
-			g.turn = next
-			break
-		}
-	}
+	g.turn = g.nextActiveSeat(g.turn)
 	return nil
 }
 
@@ -287,6 +284,99 @@ func (g *Game) Challenge(actor PlayerID) error {
 		}
 	}
 	g.roundPhase = RoundResolution
+	if !g.finishIfOneSurvivor() {
+		if player.Eliminated || player.Withdrawn {
+			loserSeat = g.nextActiveSeat(loserSeat)
+		}
+		g.nextStarter = g.players[loserSeat].ID
+	}
+	return nil
+}
+
+// NextRound advances a resolved round only on its designated starter's action.
+// It shuffles the full deck with caller-supplied randomness, deals survivors their
+// required hand sizes, and retains the previous result. Failure leaves state
+// unchanged; invalid actors/phases do not consume randomness.
+func (g *Game) NextRound(actor PlayerID, rng *rand.Rand) error {
+	if g.phase != GamePlaying || g.roundPhase != RoundResolution {
+		return ErrWrongPhase
+	}
+	seat, err := g.activePlayerSeat(actor)
+	if err != nil {
+		return err
+	}
+	if actor != g.nextStarter {
+		return ErrOutOfTurn
+	}
+	var sizes []int
+	for _, player := range g.players {
+		if !player.Eliminated && !player.Withdrawn {
+			sizes = append(sizes, player.HandSize)
+		}
+	}
+	deck := NewDeck()
+	if err := deck.Shuffle(rng); err != nil {
+		return err
+	}
+	hands, err := deck.Deal(sizes)
+	if err != nil {
+		return err
+	}
+	dealt := 0
+	for i := range g.players {
+		player := &g.players[i]
+		player.Hand = nil
+		if !player.Eliminated && !player.Withdrawn {
+			player.Hand = hands[dealt]
+			dealt++
+		}
+	}
+	g.deck = deck
+	g.eliminationLimit = min(6, DeckSize/len(sizes)+1)
+	g.roundID++
+	g.roundPhase = RoundBidding
+	g.starter = actor
+	g.nextStarter = ""
+	g.turn = seat
+	g.lastBid = nil
+	return nil
+}
+
+// Withdraw permanently removes an active participant from this game. Room code
+// calls this for explicit leave or expired reconnect grace, not temporary loss
+// of connectivity. Cards and any existing bid remain in the current round.
+func (g *Game) Withdraw(actor PlayerID) error {
+	if g.phase != GamePlaying {
+		return ErrWrongPhase
+	}
+	seat, err := g.activePlayerSeat(actor)
+	if err != nil {
+		return err
+	}
+	g.players[seat].Withdrawn = true
+	if g.finishIfOneSurvivor() {
+		return nil
+	}
+	if g.roundPhase == RoundBidding && g.turn == seat {
+		g.turn = g.nextActiveSeat(seat)
+	}
+	if g.roundPhase == RoundResolution && g.nextStarter == actor {
+		g.nextStarter = g.players[g.nextActiveSeat(seat)].ID
+	}
+	return nil
+}
+
+func (g *Game) nextActiveSeat(after int) int {
+	for offset := 1; offset <= len(g.players); offset++ {
+		seat := (after + offset) % len(g.players)
+		if !g.players[seat].Eliminated && !g.players[seat].Withdrawn {
+			return seat
+		}
+	}
+	return -1
+}
+
+func (g *Game) finishIfOneSurvivor() bool {
 	active := 0
 	var survivor PlayerID
 	for _, player := range g.players {
@@ -295,28 +385,39 @@ func (g *Game) Challenge(actor PlayerID) error {
 			survivor = player.ID
 		}
 	}
-	if active == 1 {
-		g.phase = GameFinished
-		g.winner = survivor
+	if active != 1 {
+		return false
 	}
-	return nil
+	g.phase = GameFinished
+	g.roundPhase = RoundResolution
+	g.nextStarter = ""
+	g.winner = survivor
+	return true
+}
+
+func (g *Game) activePlayerSeat(actor PlayerID) (int, error) {
+	for seat, player := range g.players {
+		if player.ID != actor {
+			continue
+		}
+		if player.Eliminated || player.Withdrawn {
+			return -1, ErrInactivePlayer
+		}
+		return seat, nil
+	}
+	return -1, ErrUnknownPlayer
 }
 
 func (g *Game) validateTurn(actor PlayerID) error {
 	if g.phase != GamePlaying || g.roundPhase != RoundBidding {
 		return ErrWrongPhase
 	}
-	for seat, player := range g.players {
-		if player.ID != actor {
-			continue
-		}
-		if player.Eliminated || player.Withdrawn {
-			return ErrInactivePlayer
-		}
-		if seat != g.turn {
-			return ErrOutOfTurn
-		}
-		return nil
+	seat, err := g.activePlayerSeat(actor)
+	if err != nil {
+		return err
 	}
-	return ErrUnknownPlayer
+	if seat != g.turn {
+		return ErrOutOfTurn
+	}
+	return nil
 }
