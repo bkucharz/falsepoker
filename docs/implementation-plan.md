@@ -223,7 +223,7 @@ legal bluffs, invalid/equal/lower/suit-only raises, challenge eligibility, snaps
 ownership, and rejection without state mutation. Fresh runs of
 `go test ./internal/game -cover -count=1` (97.5% statement coverage),
 `go test ./... -count=1`, and `go vet ./...` passed. Challenge resolution and
-round progression remain in tasks 1.6–1.7; room/admin/readiness policies remain
+round progression are covered separately in tasks 1.6–1.7; room/admin/readiness policies remain
 outside the engine.
 
 **Acceptance criteria:**
@@ -241,6 +241,18 @@ outside the engine.
 ### 1.6 — Resolve challenges and retain the round result
 
 **Dependencies:** 1.3, 1.4, 1.5.
+
+**Status:** complete. Added `Game.Challenge` to evaluate only the preceding bid
+against the current dealt union, retaining per-player revealed hands, challenger,
+bidder/claim, outcome, loser, round ID, and the completed round's limit. Resolution
+applies one penalty or elimination, respects withdrawn bidders without additional
+penalties, and identifies an immediate winner after terminal elimination. Copied
+results protect authoritative state. Tests cover true/false claims, all categories
+across hands, undealt-card exclusion, current-limit boundaries, withdrawn cards,
+repeat/out-of-turn/inactive challenges, terminal games, evaluation-error atomicity,
+and result ownership. Fresh runs of `go test ./internal/game -cover -count=1`
+(97.6% statement coverage), `go test ./... -count=1`, and `go vet ./...` passed.
+Next-round advancement, redealing, and public withdrawal commands remain in 1.7.
 
 **Acceptance criteria:**
 

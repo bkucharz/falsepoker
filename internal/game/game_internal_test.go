@@ -16,6 +16,7 @@ func TestGameInactiveAndPhaseGuards(t *testing.T) {
 		want  error
 	}{
 		{"eliminated actor", func(g *Game) { g.players[0].Eliminated = true }, ErrInactivePlayer},
+		{"withdrawn actor", func(g *Game) { g.players[0].Withdrawn = true }, ErrInactivePlayer},
 		{"eliminated out of turn", func(g *Game) { g.players[0].Eliminated = true; g.turn = 1 }, ErrInactivePlayer},
 		{"round resolution", func(g *Game) { g.roundPhase = RoundResolution }, ErrWrongPhase},
 		{"finished game", func(g *Game) { g.phase = GameFinished }, ErrWrongPhase},
@@ -33,6 +34,9 @@ func TestGameInactiveAndPhaseGuards(t *testing.T) {
 			}
 			if err := g.ValidateChallenge("a"); !errors.Is(err, tt.want) {
 				t.Errorf("challenge eligibility error = %v; want %v", err, tt.want)
+			}
+			if err := g.Challenge("a"); !errors.Is(err, tt.want) {
+				t.Errorf("challenge error = %v; want %v", err, tt.want)
 			}
 			if !reflect.DeepEqual(before, g.State()) {
 				t.Error("rejected action changed state")

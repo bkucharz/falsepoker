@@ -29,24 +29,44 @@ var (
 	ErrInvalidGame    = errors.New("invalid game configuration")
 	ErrWrongPhase     = errors.New("action is not allowed in the current phase")
 	ErrUnknownPlayer  = errors.New("unknown participant")
-	ErrInactivePlayer = errors.New("participant is eliminated")
+	ErrInactivePlayer = errors.New("participant is not active")
 	ErrOutOfTurn      = errors.New("action is out of turn")
 	ErrBidNotHigher   = errors.New("bid must be strictly higher")
 	ErrNoBid          = errors.New("there is no bid to challenge")
 )
 
-// PlayerState describes a participant in the game's fixed seat order.
+// PlayerState describes a participant in the game's fixed seat order. HandSize
+// is the required size for the next deal; Hand retains the just-played cards
+// during resolution, even after a penalty changes HandSize or eliminates a player.
 type PlayerState struct {
 	ID         PlayerID
 	HandSize   int
 	Hand       []Card
 	Eliminated bool
+	Withdrawn  bool
 }
 
 // PlacedBid records both the claim and the participant who made it.
 type PlacedBid struct {
 	PlayerID PlayerID
 	Bid      Bid
+}
+
+// RevealedHand preserves ownership of the cards dealt during a resolved round.
+type RevealedHand struct {
+	PlayerID PlayerID
+	Cards    []Card
+}
+
+// RoundResult records a challenge using the cards and limit from that round.
+type RoundResult struct {
+	RoundID          uint64
+	EliminationLimit int
+	ChallengedBid    PlacedBid
+	Challenger       PlayerID
+	ClaimSatisfied   bool
+	Loser            PlayerID
+	RevealedHands    []RevealedHand
 }
 
 // GameState is a detached snapshot for trusted domain callers. It contains all
@@ -60,6 +80,8 @@ type GameState struct {
 	CurrentPlayer    PlayerID
 	Players          []PlayerState
 	LastBid          *PlacedBid
+	LastResult       *RoundResult
+	Winner           PlayerID
 	Undealt          []Card
 }
 
@@ -74,6 +96,8 @@ type Game struct {
 	players          []PlayerState
 	turn             int
 	lastBid          *PlacedBid
+	lastResult       *RoundResult
+	winner           PlayerID
 	deck             *Deck
 }
 
@@ -139,6 +163,7 @@ func (g *Game) State() GameState {
 		RoundID:          g.roundID,
 		EliminationLimit: g.eliminationLimit,
 		Starter:          g.starter,
+		Winner:           g.winner,
 		Players:          make([]PlayerState, len(g.players)),
 	}
 	for seat, player := range g.players {
@@ -155,11 +180,19 @@ func (g *Game) State() GameState {
 	if g.deck != nil {
 		state.Undealt = g.deck.Cards()
 	}
+	if g.lastResult != nil {
+		result := *g.lastResult
+		result.RevealedHands = make([]RevealedHand, len(g.lastResult.RevealedHands))
+		for i, hand := range g.lastResult.RevealedHands {
+			result.RevealedHands[i] = RevealedHand{PlayerID: hand.PlayerID, Cards: append([]Card(nil), hand.Cards...)}
+		}
+		state.LastResult = &result
+	}
 	return state
 }
 
 // PlaceBid accepts an opening bid or strict raise by the current active player.
-// It records the bidder and advances in seat order, skipping eliminated players.
+// It records the bidder and advances in seat order, skipping inactive players.
 // Rejected actions leave state unchanged. Claims need not actually exist to bid.
 func (g *Game) PlaceBid(actor PlayerID, bid Bid) error {
 	if err := g.validateTurn(actor); err != nil {
@@ -180,7 +213,7 @@ func (g *Game) PlaceBid(actor PlayerID, bid Bid) error {
 	g.lastBid = &PlacedBid{PlayerID: actor, Bid: bid}
 	for offset := 1; offset <= len(g.players); offset++ {
 		next := (g.turn + offset) % len(g.players)
-		if !g.players[next].Eliminated {
+		if !g.players[next].Eliminated && !g.players[next].Withdrawn {
 			g.turn = next
 			break
 		}
@@ -200,6 +233,75 @@ func (g *Game) ValidateChallenge(actor PlayerID) error {
 	return nil
 }
 
+// Challenge resolves the preceding bid against all cards dealt in this round,
+// including withdrawn participants' cards. Validation/evaluation finishes before
+// any mutation. Success retains the reveal and applies one penalty or elimination;
+// repeated challenges are rejected by the resolution/finished phase guards.
+func (g *Game) Challenge(actor PlayerID) error {
+	if err := g.ValidateChallenge(actor); err != nil {
+		return err
+	}
+	var cards []Card
+	var revealed []RevealedHand
+	for _, player := range g.players {
+		if len(player.Hand) == 0 {
+			continue
+		}
+		cards = append(cards, player.Hand...)
+		revealed = append(revealed, RevealedHand{PlayerID: player.ID, Cards: append([]Card(nil), player.Hand...)})
+	}
+	satisfied, err := g.lastBid.Bid.IsSatisfiedBy(cards)
+	if err != nil {
+		return err
+	}
+	loser := g.lastBid.PlayerID
+	if satisfied {
+		loser = actor
+	}
+	loserSeat := -1
+	for seat, player := range g.players {
+		if player.ID == loser {
+			loserSeat = seat
+			break
+		}
+	}
+	if loserSeat == -1 {
+		return ErrUnknownPlayer
+	}
+
+	g.lastResult = &RoundResult{
+		RoundID:          g.roundID,
+		EliminationLimit: g.eliminationLimit,
+		ChallengedBid:    *g.lastBid,
+		Challenger:       actor,
+		ClaimSatisfied:   satisfied,
+		Loser:            loser,
+		RevealedHands:    revealed,
+	}
+	player := &g.players[loserSeat]
+	if !player.Eliminated && !player.Withdrawn {
+		if player.HandSize+1 >= g.eliminationLimit {
+			player.Eliminated = true
+		} else {
+			player.HandSize++
+		}
+	}
+	g.roundPhase = RoundResolution
+	active := 0
+	var survivor PlayerID
+	for _, player := range g.players {
+		if !player.Eliminated && !player.Withdrawn {
+			active++
+			survivor = player.ID
+		}
+	}
+	if active == 1 {
+		g.phase = GameFinished
+		g.winner = survivor
+	}
+	return nil
+}
+
 func (g *Game) validateTurn(actor PlayerID) error {
 	if g.phase != GamePlaying || g.roundPhase != RoundBidding {
 		return ErrWrongPhase
@@ -208,7 +310,7 @@ func (g *Game) validateTurn(actor PlayerID) error {
 		if player.ID != actor {
 			continue
 		}
-		if player.Eliminated {
+		if player.Eliminated || player.Withdrawn {
 			return ErrInactivePlayer
 		}
 		if seat != g.turn {

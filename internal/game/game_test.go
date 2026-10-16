@@ -258,6 +258,9 @@ func TestZeroGame(t *testing.T) {
 	if err := g.ValidateChallenge("a"); !errors.Is(err, game.ErrWrongPhase) {
 		t.Fatalf("zero game challenge error = %v; want ErrWrongPhase", err)
 	}
+	if err := g.Challenge("a"); !errors.Is(err, game.ErrWrongPhase) {
+		t.Fatalf("zero game resolution error = %v; want ErrWrongPhase", err)
+	}
 }
 
 func participants(count int) []game.PlayerID {
