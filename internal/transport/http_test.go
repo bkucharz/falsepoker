@@ -311,7 +311,7 @@ func TestHTTPValidation(t *testing.T) {
 		{"unexpected query", "GET", "/health?player_id=other", "", nil, 400, "INVALID_REQUEST", true},
 		{"GET body", "GET", "/health", "{}", nil, 400, "INVALID_REQUEST", true},
 		{"unknown route", "GET", "/missing", "", nil, 404, "NOT_FOUND", true},
-		{"unimplemented socket", "GET", "/api/v1/rooms/000000000000/ws", "", nil, 404, "NOT_FOUND", true},
+		{"socket requires origin", "GET", "/api/v1/rooms/000000000000/ws", "", nil, 403, "ORIGIN_NOT_ALLOWED", true},
 		{"wrong method", "DELETE", "/api/v1/rooms", "", nil, 405, "METHOD_NOT_ALLOWED", true},
 		{"session fields", "POST", "/api/v1/session", `{"display_name":"Alice"}`, nil, 400, "INVALID_REQUEST", true},
 		{"missing leave ID", "POST", "/api/v1/rooms/000000000000/leave", `{}`, nil, 400, "INVALID_REQUEST", false},

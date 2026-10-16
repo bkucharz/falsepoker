@@ -505,6 +505,26 @@ end only through explicit leave or process restart. No database or frontend was 
 
 **Dependencies:** 3.2.
 
+**Status:** complete. Gorilla WebSocket v1.5.3 supplies framing and connection
+I/O entirely within transport. Upgrades check cookie identity, exact origin,
+subprotocol, membership, room lifetime, and bounded connection capacity. Strict
+commands derive actors from sessions and dispatch through one room operation
+covering retry admission, context/revision checks, mutation, ordered publication,
+and outcome retention. Retries across tabs/rounds/games return the original
+outcome without another mutation. Each connection has a serialized writer,
+bounded queues, message limits, write/read deadlines, and matching Ping/Pong
+heartbeats. Explicit leave and server shutdown terminate associated sockets.
+Real HTTP/TLS/WebSocket clients cover private hands, spectators, all command
+actions, invalid input, turn/context/revision guards, concurrent duplicates and
+conflicts, room isolation, rate/capacity limits, heartbeat renewal/expiry, and
+shutdown. Room tests cover retry retention, admission without eviction, rejected
+outcomes, no-ops, closed subscriptions, and atomic duplicate execution. The README
+includes a browser-console readiness exercise. Grace/first-attachment expiry
+remains in phase 3.4; no UI or persistence was added.
+Verification passed: `go test -race ./internal/transport/... ./internal/room/...`,
+`go test -race -count=1 -cover ./...`, `go test ./...`, `go vet ./...`,
+`go mod tidy -diff`, formatting, and `git diff --check`.
+
 **Acceptance criteria:**
 
 - Authenticate upgrades, validate browser origins, and authorize room membership.

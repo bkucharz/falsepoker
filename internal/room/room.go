@@ -65,6 +65,7 @@ type Room struct {
 	revision    uint64
 	subscribers map[*Subscription]struct{}
 	playerNames map[game.PlayerID]string
+	retries     map[game.PlayerID]map[string]commandRecord
 }
 
 // Code is an immutable invitation identifier; it does not expose room state.
@@ -117,6 +118,10 @@ func (r *Room) joinLocked(id game.PlayerID, displayName string) error {
 func (r *Room) SetReady(actor game.PlayerID, ready bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.setReadyLocked(actor, ready)
+}
+
+func (r *Room) setReadyLocked(actor game.PlayerID, ready bool) error {
 	seat, err := r.requireMember(actor)
 	if err != nil {
 		return err
@@ -136,6 +141,10 @@ func (r *Room) SetReady(actor game.PlayerID, ready bool) error {
 func (r *Room) Start(actor game.PlayerID, options StartOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.startLocked(actor, options)
+}
+
+func (r *Room) startLocked(actor game.PlayerID, options StartOptions) error {
 	if _, err := r.requireMember(actor); err != nil {
 		return err
 	}

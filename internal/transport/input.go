@@ -54,6 +54,10 @@ func decodeBody(w http.ResponseWriter, r *http.Request, target any) *failure {
 	if problem != nil {
 		return problem
 	}
+	return decodeJSON(data, target)
+}
+
+func decodeJSON(data []byte, target any) *failure {
 	if !utf8.Valid(data) || len(bytes.TrimSpace(data)) == 0 || bytes.TrimSpace(data)[0] != '{' {
 		return invalidJSON()
 	}

@@ -13,7 +13,7 @@ var (
 
 // GameContext identifies the game and round observed by the caller. Neither
 // field may be omitted; delayed commands must not act on a later round or game.
-// Request IDs, retries, and expected-revision checks belong to the protocol.
+// Socket command admission adds retry and revision guards around this context.
 type GameContext struct {
 	GameID  uint64
 	RoundID uint64
@@ -39,6 +39,10 @@ func (r *Room) NextRound(actor game.PlayerID, context GameContext) error {
 func (r *Room) gameCommand(actor game.PlayerID, context GameContext, apply func(*game.Game) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.gameCommandLocked(actor, context, apply)
+}
+
+func (r *Room) gameCommandLocked(actor game.PlayerID, context GameContext, apply func(*game.Game) error) error {
 	if _, err := r.requireMember(actor); err != nil {
 		return err
 	}

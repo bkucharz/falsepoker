@@ -1,5 +1,5 @@
-// Package transport adapts authenticated HTTP requests to in-memory rooms.
-// It contains no game rules. WebSocket commands are added in phase 3.3.
+// Package transport adapts authenticated HTTP and WebSocket traffic to rooms.
+// It contains no game rules.
 package transport
 
 import (
@@ -28,15 +28,17 @@ const (
 	retryLifetime  = 5 * time.Minute
 )
 
-// Limits bounds HTTP resources; zero fields use the protocol defaults.
+// Limits bounds transport resources; zero fields use the protocol defaults.
 type Limits struct {
-	MaxSessions     int
-	MaxMemberships  int
-	MaxRetryRecords int
-	MutationRate    float64
-	MutationBurst   int
-	BootstrapRate   float64
-	BootstrapBurst  int
+	MaxSessions             int
+	MaxMemberships          int
+	MaxRetryRecords         int
+	MutationRate            float64
+	MutationBurst           int
+	BootstrapRate           float64
+	BootstrapBurst          int
+	MaxConnections          int
+	MaxConnectionsPerMember int
 }
 
 type Config struct {
@@ -47,8 +49,8 @@ type Config struct {
 	Now                  func() time.Time // nil uses time.Now; tests may supply a controlled clock
 }
 
-// Server owns sessions and their HTTP retry ledgers. Close stops its cleanup
-// goroutine; callers separately shut down the enclosing http.Server.
+// Server owns sessions, HTTP retry ledgers and live sockets. Close stops cleanup
+// and socket goroutines; callers separately shut down the enclosing http.Server.
 type Server struct {
 	registry      *room.Registry
 	origin        string
@@ -64,6 +66,11 @@ type Server struct {
 	stop          chan struct{}
 	done          chan struct{}
 	closeOnce     sync.Once
+	socketMu      sync.Mutex
+	sockets       map[*socket]struct{}
+	socketCount   int // includes handshakes reserved before queue allocation
+	socketWG      sync.WaitGroup
+	timing        socketTiming
 }
 
 func NewServer(config Config) (*Server, error) {
@@ -75,6 +82,15 @@ func NewServer(config Config) (*Server, error) {
 		return nil, errors.New("insecure cookies require an explicit loopback HTTP origin")
 	}
 	l := config.Limits
+	if l.MaxConnections == 0 {
+		l.MaxConnections = 512
+	}
+	if l.MaxConnectionsPerMember == 0 {
+		l.MaxConnectionsPerMember = 4
+	}
+	if l.MaxConnections < 1 || l.MaxConnectionsPerMember < 2 {
+		return nil, errors.New("connection limits require a positive total and at least two per membership")
+	}
 	if l.MaxSessions == 0 {
 		l.MaxSessions = 1024
 	}
@@ -110,14 +126,25 @@ func NewServer(config Config) (*Server, error) {
 		limits: l, now: config.Now, entropy: rand.Reader,
 		sessions: make(map[[32]byte]*session), players: make(map[game.PlayerID]bool),
 		bootstrap: make(map[string]*bucket), stop: make(chan struct{}), done: make(chan struct{}),
+		sockets: make(map[*socket]struct{}),
+		timing:  socketTiming{pingInterval, pongTimeout, writeTimeout},
 	}
 	go s.cleanupLoop()
 	return s, nil
 }
 
 func (s *Server) Close() {
-	s.closeOnce.Do(func() { s.closing.Store(true); close(s.stop) })
+	s.closeOnce.Do(func() {
+		s.closing.Store(true)
+		close(s.stop)
+		s.socketMu.Lock()
+		for conn := range s.sockets {
+			conn.stop(1001, "Server shutdown")
+		}
+		s.socketMu.Unlock()
+	})
 	<-s.done
+	s.socketWG.Wait()
 }
 
 func loopbackHost(host string) bool {

@@ -57,8 +57,28 @@ transport DTOs, string enums/counters, full recipient snapshots, cookie-bound
 identity, and a room lifetime identifier distinct from the invitation code.
 New commands require the observed room revision; duplicate decisions and revision
 checks share the room's mutation boundary. HTTP and WebSocket retry outcomes have
-bounded five-minute retention. These are phase 3 integration requirements, not
-features already implemented by the phase 2 API.
+bounded five-minute retention. HTTP and WebSocket commands are implemented in
+phases 3.2/3.3; disconnect-grace timers remain in phase 3.4.
+
+The WebSocket adapter uses [Gorilla WebSocket v1.5.3](https://github.com/gorilla/websocket)
+for its maintained, tested RFC 6455 implementation, read limits, deadlines and
+Ping/Pong support. The standard library has no WebSocket implementation. This is
+the only external backend dependency; all its types stay in `internal/transport`.
+Each socket has one reader and one writer. The writer handles snapshots,
+acknowledgments, application errors and heartbeat/control replies; Gorilla
+internally serializes its own protocol-error control frames. Compression is off.
+Transport admission reserves process capacity before allocating socket queues.
+
+`Subscription.Execute` rejects closed connections and performs membership,
+duplicate lookup/admission, game/round/revision checks, mutation, publication,
+and outcome retention under the room mutex. The transport parses exact wire
+shapes and fingerprints normalized typed intent; the room stores that fingerprint
+and outcome without knowing JSON or WebSocket types. Retry records are limited
+to 256 per player-room for five minutes, with a combined bound of
+`maxMembers * 256` per room to bound churn from departed identities. Unexpired
+outcomes are never evicted to admit another command. HTTP and WS ingress share
+the session's rate budget, including retries. The lock order is session map,
+individual session, room, registry; room code never calls transport.
 
 ## Concurrency
 
@@ -84,8 +104,8 @@ readiness, reads, and subscription setup/closure do not increment it. Revisions
 continue across games within one live room; they are not durable or global IDs.
 Both lobby snapshots and recipient views carry the room revision. Gameplay
 commands identify the observed game and round, and reject stale context before
-mutating state. Protocol-level request IDs, retry semantics, and expected-revision
-checks are specified in phase 3.
+mutating state. Socket commands additionally enforce the protocol's expected
+revision and share a room-owned retry ledger across tabs and games.
 
 `Room.Subscribe` registers one connection and queues its initial recipient view
 under the same lock, preventing a missed update between snapshot and subscription.

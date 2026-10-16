@@ -2,9 +2,10 @@
 
 ## Status and scope
 
-This is the implementation contract for phases 3.2–3.5. Phase 3.2 implements the
-HTTP/session increment; WebSocket and connection-grace behavior remain in later
-phases. See [the README](../README.md) for what can currently be run. Gameplay follows
+This is the implementation contract for phases 3.2–3.5. Phases 3.2/3.3 implement
+HTTP sessions/memberships and authenticated WebSocket gameplay with snapshots,
+retries, limits and heartbeat handling. Connection-grace timers remain in 3.4.
+See [the README](../README.md) for local HTTP and browser-console exercises. Gameplay follows
 [game-rules.md](game-rules.md); ownership and locking follow
 [architecture.md](architecture.md).
 
@@ -469,6 +470,7 @@ the 2–24 game-participant bounds.
 | Simultaneous connections per membership | 4; excess attachment rejected without closing existing tabs |
 | Live rooms / anonymous sessions / total WebSockets per process | 128 / 1,024 / 512 |
 | HTTP retry records per session / WS retry records per player-room | 128 / 256, each retained 5 minutes |
+| Combined WS retry records per live room, including departed identities | Member capacity × 256; same retention/admission policy |
 | Pending room views per connection | 16, including the initial view |
 | Pending transport output envelopes per connection | At most 16, including acks/errors; no unbounded intermediate queue |
 | Mutations per session | 10 per second, burst 20; cached retries count for ingress rate limits |

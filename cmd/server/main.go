@@ -54,7 +54,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	log.Printf("HTTP server listening on %s; application origin %s; WebSockets are not implemented yet", listener.Addr(), *origin)
+	log.Printf("HTTP/WebSocket server listening on %s; application origin %s", listener.Addr(), *origin)
 	failed := make(chan error, 1)
 	go func() { failed <- server.Serve(listener) }()
 	select {

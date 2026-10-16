@@ -98,8 +98,7 @@ func roomFailure(err error) *failure {
 	}
 }
 
-// ServeHTTP routes only the implemented HTTP increment. Unknown paths (including
-// the future WebSocket route) never silently act as a join or other mutation.
+// ServeHTTP never implicitly joins a member through an upgrade or read route.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.closing.Load() {
 		writeResponse(w, errorResponse("", transient(503, "SHUTTING_DOWN", "The server is shutting down.", 1)))
@@ -115,11 +114,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeResponse(w, errorResponse("", fail(405, "METHOD_NOT_ALLOWED", "The method is not supported.")))
 		return
 	}
-	if r.URL.RawQuery != "" || (r.URL.RawPath != "" && strings.Contains(strings.ToLower(r.URL.RawPath), "%2f")) {
+	if (route != "ws" && r.URL.RawQuery != "") || (r.URL.RawPath != "" && strings.Contains(strings.ToLower(r.URL.RawPath), "%2f")) {
 		writeResponse(w, errorResponse("", fail(400, "INVALID_REQUEST", "Unexpected URL parameters or path encoding.")))
 		return
 	}
-	if method == http.MethodPost {
+	if method == http.MethodPost || route == "ws" {
 		origins := r.Header.Values("Origin")
 		if len(origins) != 1 || origins[0] != s.origin {
 			writeResponse(w, errorResponse("", fail(403, "ORIGIN_NOT_ALLOWED", "The origin is not allowed.")))
@@ -151,6 +150,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if code != "" && !lowerHex(code, 12) {
 		writeResponse(w, errorResponse("", fail(400, "INVALID_REQUEST", "Use a 12-character hexadecimal room code.")))
+		return
+	}
+	if route == "ws" {
+		body, f := readBody(w, r)
+		if f != nil {
+			writeResponse(w, errorResponse("", f))
+			return
+		}
+		if len(body) != 0 {
+			writeResponse(w, errorResponse("", invalidJSON()))
+			return
+		}
+		s.upgrade(w, r, sess, code)
 		return
 	}
 	if route == "info" {
@@ -227,6 +239,9 @@ func routeFor(path string) (route, code, method string) {
 	code = strings.ToLower(parts[4])
 	if len(parts) == 5 {
 		return "info", code, http.MethodGet
+	}
+	if parts[5] == "ws" {
+		return "ws", code, http.MethodGet
 	}
 	if parts[5] == "join" || parts[5] == "leave" {
 		return parts[5], code, http.MethodPost
