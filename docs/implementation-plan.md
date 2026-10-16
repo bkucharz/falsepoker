@@ -163,6 +163,15 @@ to tasks 1.3 and 1.4.
 
 **Dependencies:** 1.2.
 
+**Status:** complete. Added `Bid.IsSatisfiedBy` for high card, pair, two pairs,
+three of a kind, full house, and four of a kind over the union of dealt cards.
+Evaluation validates bids and physical cards, rejects duplicates, checks the
+exact claimed ranks, accepts surplus matches, and leaves input unchanged.
+Table-driven tests include empty/insufficient unions and combinations split across
+hands. Fresh runs of `go test ./internal/game -cover -count=1` (100% statement
+coverage), `go test ./... -count=1`, and `go vet ./...` passed. Valid sequence/suit
+claims return `ErrUnsupportedBidCategory` until task 1.4 adds their evaluation.
+
 **Acceptance criteria:**
 
 - Evaluate high card, pair, two pairs, three of a kind, full house, and four of a
