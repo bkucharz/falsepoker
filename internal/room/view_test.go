@@ -53,19 +53,21 @@ func TestViewGamePhases(t *testing.T) {
 	}{
 		{"opening", func(*testing.T, *Room) {}, game.GamePlaying, game.RoundBidding, 1, false, false},
 		{"bid placed", func(t *testing.T, r *Room) {
-			changeEngine(t, r, func(g *game.Game) error {
-				return g.PlaceBid("p0", game.Bid{Category: game.HighCard, PrimaryRank: game.Ace})
-			})
+			if err := r.PlaceBid("p0", gameContext(roomView(t, r, "p0")), game.Bid{Category: game.HighCard, PrimaryRank: game.Ace}); err != nil {
+				t.Fatal(err)
+			}
 		}, game.GamePlaying, game.RoundBidding, 1, false, false},
 		{"resolution", resolveFalseBid, game.GamePlaying, game.RoundResolution, 1, true, true},
 		{"withdrawn bidder reveal", func(t *testing.T, r *Room) {
-			changeEngine(t, r, func(g *game.Game) error {
-				return g.PlaceBid("p0", game.Bid{Category: game.RoyalStraightFlush, Suit: game.Clubs})
-			})
+			if err := r.PlaceBid("p0", gameContext(roomView(t, r, "p0")), game.Bid{Category: game.RoyalStraightFlush, Suit: game.Clubs}); err != nil {
+				t.Fatal(err)
+			}
 			if err := r.Leave("p0"); err != nil {
 				t.Fatal(err)
 			}
-			changeEngine(t, r, func(g *game.Game) error { return g.Challenge("p1") })
+			if err := r.Challenge("p1", gameContext(roomView(t, r, "p1"))); err != nil {
+				t.Fatal(err)
+			}
 		}, game.GamePlaying, game.RoundResolution, 1, true, true},
 		{"next round", func(t *testing.T, r *Room) {
 			resolveFalseBid(t, r)
@@ -217,11 +219,6 @@ func TestViewFinishedChallengeAndReplayAccess(t *testing.T) {
 			assertVisibleHand(t, player, finished.Players[seat].Hand, true)
 		}
 	}
-	// Gameplay forwarding and its game-end readiness reset belong to 2.3.
-	// This fixture drove the engine directly, so reset readiness via the lobby API.
-	if err := r.SetReady("p1", false); err != nil {
-		t.Fatal(err)
-	}
 	for _, id := range []game.PlayerID{"p0", "admin"} {
 		if err := r.SetReady(id, true); err != nil {
 			t.Fatal(err)
@@ -256,9 +253,10 @@ func TestViewOwnsMutableData(t *testing.T) {
 	r := startedViewRoom(t, 3)
 	resolveFalseBid(t, r)
 	advanceRound(t, r)
-	changeEngine(t, r, func(g *game.Game) error {
-		return g.PlaceBid(g.State().CurrentPlayer, game.Bid{Category: game.HighCard, PrimaryRank: game.Nine})
-	})
+	current := roomView(t, r, "admin")
+	if err := r.PlaceBid(current.Game.CurrentPlayer, gameContext(current), game.Bid{Category: game.HighCard, PrimaryRank: game.Nine}); err != nil {
+		t.Fatal(err)
+	}
 	before, other := roomView(t, r, "admin"), roomView(t, r, "p1")
 	state := engineState(r)
 	mutated := roomView(t, r, "admin")
@@ -366,22 +364,26 @@ func TestConcurrentViewsDuringRoundTransitions(t *testing.T) {
 	r := startedViewRoom(t, 2)
 	for _, err := range concurrent(64, func(i int) error {
 		if i == 0 {
-			// Use engine commands under the room lock until forwarding exists.
 			for round := 0; round < 5; round++ {
-				r.mu.Lock()
-				bid, err := falseRoyalBid(r.game.State())
-				if err == nil {
-					err = r.game.PlaceBid("p0", bid)
-				}
-				if err == nil {
-					err = r.game.Challenge("p1")
-				}
-				if err == nil && r.game.State().Phase == game.GamePlaying {
-					err = r.game.NextRound("p0", r.rng)
-				}
-				r.mu.Unlock()
+				view, err := r.View("p0")
 				if err != nil {
 					return err
+				}
+				context := gameContext(view)
+				bid, err := falseRoyalBid(engineState(r))
+				if err != nil {
+					return err
+				}
+				if err := r.PlaceBid("p0", context, bid); err != nil {
+					return err
+				}
+				if err := r.Challenge("p1", context); err != nil {
+					return err
+				}
+				if round < 4 {
+					if err := r.NextRound("p0", context); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
@@ -393,11 +395,18 @@ func TestConcurrentViewsDuringRoundTransitions(t *testing.T) {
 			}
 			g := view.Game
 			if g.RoundPhase == game.RoundBidding {
-				if g.CurrentPlayer != "p0" || g.LastBid != nil || g.Winner != "" || g.Players[0].Hand != nil || len(g.Players[1].Hand) != 1 {
+				opening := g.CurrentPlayer == "p0" && g.LastBid == nil
+				responding := g.CurrentPlayer == "p1" && g.LastBid != nil && g.LastBid.PlayerID == "p0"
+				if (!opening && !responding) || g.Winner != "" || g.Players[0].Hand != nil || len(g.Players[1].Hand) != 1 {
 					return errors.New("bidding view mixes phases or exposes opponent's hand")
 				}
-			} else if g.Phase != game.GameFinished || g.Winner != "p1" || len(g.Players[0].Hand) != 5 || g.LastResult == nil {
-				return errors.New("finished view mixes phases or omits final reveal")
+			} else {
+				if g.CurrentPlayer != "" || g.LastResult == nil || g.LastResult.RoundID != g.RoundID || len(g.Players[0].Hand) != int(g.RoundID) {
+					return errors.New("resolution view mixes rounds or omits revealed cards")
+				}
+				if g.Phase == game.GameFinished && (g.Winner != "p1" || g.RoundID != 5) {
+					return errors.New("finished view omits winner or final round")
+				}
 			}
 		}
 		return nil
@@ -430,30 +439,20 @@ func startedViewRoom(t *testing.T, count int) *Room {
 	return r
 }
 
-// Until command forwarding is implemented in 2.3, tests establish game phases
-// through the owned engine under the same room synchronization boundary.
-func changeEngine(t *testing.T, r *Room, change func(*game.Game) error) {
-	t.Helper()
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := change(r.game); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func resolveFalseBid(t *testing.T, r *Room) {
 	t.Helper()
-	changeEngine(t, r, func(g *game.Game) error {
-		state := g.State()
-		bid, err := falseRoyalBid(state)
-		if err != nil {
-			return err
-		}
-		if err := g.PlaceBid(state.CurrentPlayer, bid); err != nil {
-			return err
-		}
-		return g.Challenge(g.State().CurrentPlayer)
-	})
+	view := roomView(t, r, "admin")
+	bid, err := falseRoyalBid(engineState(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	context := gameContext(view)
+	if err := r.PlaceBid(view.Game.CurrentPlayer, context, bid); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Challenge(roomView(t, r, "admin").Game.CurrentPlayer, context); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func falseRoyalBid(state game.GameState) (game.Bid, error) {
@@ -476,7 +475,10 @@ func falseRoyalBid(state game.GameState) (game.Bid, error) {
 
 func advanceRound(t *testing.T, r *Room) {
 	t.Helper()
-	changeEngine(t, r, func(g *game.Game) error { return g.NextRound(g.State().NextStarter, r.rng) })
+	view := roomView(t, r, "admin")
+	if err := r.NextRound(view.Game.NextStarter, gameContext(view)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertVisibleHand(t *testing.T, player PlayerView, dealt []game.Card, visible bool) {

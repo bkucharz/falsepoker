@@ -222,39 +222,10 @@ func TestAdminRetainedOnEliminationAndTransferredOnLeave(t *testing.T) {
 	if err := r.Start("admin", StartOptions{ShuffleSeats: true, FirstBidder: "admin"}); err != nil {
 		t.Fatal(err)
 	}
-	// Gameplay forwarding belongs to 2.3. Drive the owned engine under the room
-	// lock to establish a real elimination without exposing it in the lobby API.
-	r.mu.Lock()
-	current := r.game.State()
-	var cards []game.Card
-	for _, player := range current.Players {
-		cards = append(cards, player.Hand...)
-	}
-	// Thirteen cards cannot contain royal straight flushes in all four suits.
-	// Select a genuinely false claim so the admin deterministically loses.
-	bid := game.Bid{Category: game.RoyalStraightFlush}
-	for _, suit := range []game.Suit{game.Clubs, game.Diamonds, game.Hearts, game.Spades} {
-		bid.Suit = suit
-		exists, err := bid.IsSatisfiedBy(cards)
-		if err != nil {
-			r.mu.Unlock()
-			t.Fatal(err)
-		}
-		if !exists {
-			break
-		}
-	}
-	if err := r.game.PlaceBid("admin", bid); err != nil {
-		r.mu.Unlock()
-		t.Fatal(err)
-	}
-	challenger := r.game.State().CurrentPlayer
-	if err := r.game.Challenge(challenger); err != nil {
-		r.mu.Unlock()
-		t.Fatal(err)
-	}
-	eliminated := r.game.State().LastResult.Loser
-	r.mu.Unlock()
+	resolveFalseBid(t, r)
+	current := roomView(t, r, "admin")
+	challenger := current.Game.LastResult.Challenger
+	eliminated := current.Game.LastResult.Loser
 	if eliminated != "admin" || lobby(t, r, "admin").Admin != "admin" {
 		t.Fatal("admin should be eliminated from game and retain room authority")
 	}

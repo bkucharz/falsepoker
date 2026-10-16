@@ -20,6 +20,7 @@ const (
 // never an authentication credential.
 type RoomView struct {
 	Code      string
+	Revision  uint64
 	Admin     game.PlayerID
 	Members   []Member
 	GameID    uint64
@@ -69,12 +70,18 @@ func (r *Room) View(actor game.PlayerID) (RoomView, error) {
 	if _, err := r.requireMember(actor); err != nil {
 		return RoomView{}, err
 	}
+	return r.viewLocked(actor), nil
+}
+
+// viewLocked requires r.mu and an existing member. Each call owns all mutable
+// storage, including when several subscriptions belong to the same member.
+func (r *Room) viewLocked(actor game.PlayerID) RoomView {
 	view := RoomView{
-		Code: r.code, Admin: r.admin, Members: slices.Clone(r.members),
+		Code: r.code, Revision: r.revision, Admin: r.admin, Members: slices.Clone(r.members),
 		GameID: r.gameID, Recipient: actor, Role: Spectator,
 	}
 	if r.game == nil {
-		return view, nil
+		return view
 	}
 	state := r.game.State()
 	for _, player := range state.Players {
@@ -103,5 +110,5 @@ func (r *Room) View(actor game.PlayerID) (RoomView, error) {
 		current.Players[seat] = public
 	}
 	view.Game = current
-	return view, nil
+	return view
 }

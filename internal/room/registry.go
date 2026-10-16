@@ -84,6 +84,7 @@ func (r *Registry) Create(creator game.PlayerID, displayName string) (*Room, err
 			registry: r,
 			code:     code,
 			admin:    creator,
+			revision: 1,
 			members:  []Member{member},
 			rng:      mathrand.New(mathrand.NewSource(seed)),
 		}

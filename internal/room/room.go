@@ -21,6 +21,7 @@ type Member struct {
 // participants. Personalized gameplay views are a separate responsibility.
 type LobbyState struct {
 	Code         string
+	Revision     uint64
 	Admin        game.PlayerID
 	Members      []Member
 	GameID       uint64
@@ -40,15 +41,17 @@ type StartOptions struct {
 // Registry.Create. No mutable game pointer escapes. A retained reference cannot
 // reopen a room after deletion.
 type Room struct {
-	mu       sync.Mutex
-	registry *Registry
-	code     string
-	closed   bool
-	admin    game.PlayerID
-	members  []Member
-	rng      *rand.Rand
-	game     *game.Game
-	gameID   uint64
+	mu          sync.Mutex
+	registry    *Registry
+	code        string
+	closed      bool
+	admin       game.PlayerID
+	members     []Member
+	rng         *rand.Rand
+	game        *game.Game
+	gameID      uint64
+	revision    uint64
+	subscribers map[*Subscription]struct{}
 }
 
 // Code is an immutable invitation identifier; it does not expose room state.
@@ -70,6 +73,7 @@ func (r *Room) Join(id game.PlayerID, displayName string) error {
 		return ErrAlreadyMember
 	}
 	r.members = append(r.members, member)
+	r.publishLocked()
 	return nil
 }
 
@@ -85,7 +89,10 @@ func (r *Room) SetReady(actor game.PlayerID, ready bool) error {
 	if r.game != nil && r.game.State().Phase == game.GamePlaying {
 		return ErrGameInProgress
 	}
-	r.members[seat].Ready = ready
+	if r.members[seat].Ready != ready {
+		r.members[seat].Ready = ready
+		r.publishLocked()
+	}
 	return nil
 }
 
@@ -146,6 +153,7 @@ func (r *Room) Start(actor game.PlayerID, options StartOptions) error {
 	}
 	r.game = next
 	r.gameID++
+	r.publishLocked()
 	return nil
 }
 
@@ -182,6 +190,12 @@ func (r *Room) Leave(actor game.PlayerID) error {
 	} else if actor == r.admin {
 		r.admin = r.members[r.rng.Intn(len(r.members))].ID
 	}
+	for sub := range r.subscribers {
+		if sub.actor == actor && !r.closed {
+			r.closeSubscriptionLocked(sub, ErrNotMember)
+		}
+	}
+	r.publishLocked()
 	return nil
 }
 
@@ -193,7 +207,7 @@ func (r *Room) Snapshot(actor game.PlayerID) (LobbyState, error) {
 	if _, err := r.requireMember(actor); err != nil {
 		return LobbyState{}, err
 	}
-	state := LobbyState{Code: r.code, Admin: r.admin, Members: slices.Clone(r.members), GameID: r.gameID}
+	state := LobbyState{Code: r.code, Revision: r.revision, Admin: r.admin, Members: slices.Clone(r.members), GameID: r.gameID}
 	if r.game != nil {
 		current := r.game.State()
 		state.GamePhase = current.Phase
