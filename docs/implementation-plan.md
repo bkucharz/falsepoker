@@ -666,6 +666,28 @@ smoke test, then expand its scenarios in 4.3.
 
 ### 4.1 — Bootstrap React/TypeScript/Vite and the room lobby
 
+**Status:** implemented across 4.1a–4.1c. Added `web` with React/TypeScript/Vite,
+a mobile-first visual foundation, create/join/invitation forms, live member and
+readiness views, independent admin seat/starter configuration, and confirmed
+participant leave. The protocol client owns coordinated session bootstrap,
+reload/reconnect restoration, terminal-error recovery, precise snapshot ordering,
+and bounded original-intent retries without client-authoritative game decisions.
+A non-secret expiry marker prevents another tab silently replacing an expired
+session after its cookie is cleared; credentials stay in HttpOnly cookies.
+Separate frontend and browser CI jobs use locked dependencies and local servers.
+See [web/README.md](../web/README.md) for operation, tests, and design decisions.
+Gameplay controls and peeking remain in 4.2; full-game browser recovery and grace
+expiry remain in 4.3. Phone/desktop viewport screenshots have been inspected;
+physical-phone keyboard/touch checks and a successful GitHub Actions run remain
+manual verification on the next PR.
+
+Local verification passed: `npm --prefix web ci`, `npm --prefix web run typecheck`,
+`npm --prefix web test` (42 unit/component cases), `npm --prefix web run build`,
+`npm --prefix web run format:check`, and `npm --prefix web run test:e2e` (five
+Chromium scenarios covering real HTTP/WebSockets, shared tabs, reconnect, lobby
+actions, responsive layouts, and explicit expired-session recovery). Also passed
+`go test -race ./...`, `go vet ./...`, and `git diff --check`.
+
 Deliver 4.1a, 4.1b, and 4.1c as separate reviewable PRs. Basic session recovery and
 connection correctness belong here; 4.3 completes the UX and scenario coverage.
 
