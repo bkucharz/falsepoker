@@ -19,6 +19,7 @@ const (
 // Game is nil before the first game starts. Recipient is a public player ID,
 // never an authentication credential.
 type RoomView struct {
+	RoomID    string
 	Code      string
 	Revision  uint64
 	Admin     game.PlayerID
@@ -34,6 +35,7 @@ type RoomView struct {
 // penalty in resolution. Hand is nil when hidden or when no cards were dealt.
 type PlayerView struct {
 	ID               game.PlayerID
+	DisplayName      string
 	RequiredHandSize int
 	HandCount        int
 	Eliminated       bool
@@ -77,7 +79,8 @@ func (r *Room) View(actor game.PlayerID) (RoomView, error) {
 // storage, including when several subscriptions belong to the same member.
 func (r *Room) viewLocked(actor game.PlayerID) RoomView {
 	view := RoomView{
-		Code: r.code, Revision: r.revision, Admin: r.admin, Members: slices.Clone(r.members),
+		RoomID: r.id,
+		Code:   r.code, Revision: r.revision, Admin: r.admin, Members: slices.Clone(r.members),
 		GameID: r.gameID, Recipient: actor, Role: Spectator,
 	}
 	if r.game == nil {
@@ -99,7 +102,7 @@ func (r *Room) viewLocked(actor game.PlayerID) RoomView {
 	}
 	for seat, player := range state.Players {
 		public := PlayerView{
-			ID: player.ID, RequiredHandSize: player.HandSize, HandCount: len(player.Hand),
+			ID: player.ID, DisplayName: r.playerNames[player.ID], RequiredHandSize: player.HandSize, HandCount: len(player.Hand),
 			Eliminated: player.Eliminated, Withdrawn: player.Withdrawn,
 		}
 		survivor := !player.Eliminated && !player.Withdrawn

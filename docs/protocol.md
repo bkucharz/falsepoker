@@ -2,8 +2,9 @@
 
 ## Status and scope
 
-This is the implementation contract for phases 3.2–3.5, not a description of an
-already running server. Phase 3.1 adds documentation only. Gameplay follows
+This is the implementation contract for phases 3.2–3.5. Phase 3.2 implements the
+HTTP/session increment; WebSocket and connection-grace behavior remain in later
+phases. See [the README](../README.md) for what can currently be run. Gameplay follows
 [game-rules.md](game-rules.md); ownership and locking follow
 [architecture.md](architecture.md).
 
@@ -772,8 +773,9 @@ is Alice's turn. This distinguishes stale context from current-state validation:
 
 The wire types are explicit transport DTOs, not direct JSON marshaling of engine
 state or Go enum values. Existing room views supply the privacy projection and
-revision; existing subscriptions supply ordered detached snapshots. Subsequent
-phases must add the following integration work without moving rules into transport:
+revision; existing subscriptions supply ordered detached snapshots. The following
+table assigns integration work to its phase; HTTP/session work is implemented,
+while WebSocket/lifecycle work remains. Rules stay outside transport:
 
 | Contract | Existing support / required implementation |
 | --- | --- |
@@ -800,10 +802,10 @@ Features reach full conformance as their dependent phases finish. The 3.2 server
 can exercise HTTP before WS/lifecycle support is complete; it must be documented
 as that increment rather than advertised as the complete multiplayer protocol.
 
-For this documentation task, verify fenced JSON examples parse, manually check
+For protocol documentation changes, verify fenced JSON examples parse, manually check
 the worked revisions/turns/claim outcome, map every action/error above to rules
 and room APIs, and run `git diff --check`. Networking tests belong to 3.2–3.5;
-no application code or network behavior is implemented by this document.
+this document specifies behavior rather than implementing it.
 
 References: [WebSocket framing, origin model, and close codes (RFC 6455)](https://www.rfc-editor.org/rfc/rfc6455.html),
 [HTTP semantics (RFC 9110)](https://www.rfc-editor.org/rfc/rfc9110.html), and

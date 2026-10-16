@@ -464,6 +464,29 @@ to a documented exchange. No networking implementation is part of this PR.
 
 **Dependencies:** 3.1.
 
+**Status:** complete. Added `cmd/server` with configurable loopback listener,
+public origin, explicit local HTTP cookie mode, server timeouts, and signal-driven
+shutdown. `internal/transport` uses the standard library for anonymous sessions,
+HttpOnly/SameSite cookies (Secure by default), exact-origin checks, strict bounded
+JSON input, structured errors, and create/join/member-info/leave HTTP endpoints.
+Sessions and five-minute HTTP retry ledgers are bounded; repeated requests across
+connections reuse the captured outcome without repeating mutations. Idle sessions
+and expired retry records are cleaned up; capacity/ingress failures are explicit.
+Room coordination now supplies lifetime IDs, atomic membership metadata, bounded
+room/member capacity, and retained participant names. Explicit wire DTOs preserve
+recipient hand privacy, string enums/counters, nullable fields, and public results.
+Tests use ephemeral HTTP/TLS servers and controlled time to cover cookies,
+authorization, malformed/spoofed input, duplicate requests, concurrent joins and
+join/leave races, cache/session expiry and capacity, rate limits, and gameplay-view
+privacy across phases/replay. `go test -race -count=1 -cover ./...` passed
+(92.8% transport, 96.3% room, 97.7% engine coverage), as did `go vet ./...`,
+`go mod tidy -diff`, formatting, and `git diff --check`. An actual
+`go run ./cmd/server -dev-http` plus curl smoke test verified health, separate
+sessions, create/retry, join, member read, admin transfer, final leave, and replay
+of that leave after deletion. The README contains local run/curl instructions.
+WebSockets and connection/grace timers remain in 3.3/3.4; HTTP memberships currently
+end only through explicit leave or process restart. No database or frontend was added.
+
 **Acceptance criteria:**
 
 - Compose the existing domain and room packages in `cmd/server`; add a health endpoint.
