@@ -1,0 +1,62 @@
+name: Go CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-checks:
+    name: Go checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: '1'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            go.sum
+
+      - name: Check formatting
+        run: |
+          mapfile -d '' go_files < <(git ls-files -z -- '*.go')
+          if (( ${#go_files[@]} == 0 )); then
+            echo '::error::go.mod exists but no tracked Go files were found.'
+            exit 1
+          fi
+          unformatted="$(gofmt -l "${go_files[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted"
+            echo '::error::Run gofmt on the files listed above and commit the changes.'
+            exit 1
+          fi
+
+      - name: Check module metadata
+        run: go mod tidy -diff
+
+      - name: Run static checks
+        run: go vet ./...
+
+      - name: Run tests with race detection and coverage
+        run: go test -race -count=1 -cover ./...
