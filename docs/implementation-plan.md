@@ -494,6 +494,10 @@ Follow the README from a clean checkout and record the manual usability checks.
 
 **Dependencies:** 5.1.
 
+Basic Go CI is introduced early in `.github/workflows/go-checks.yml`; see
+[ci.md](ci.md). It requires the initialized Go module on every run. Frontend and
+browser checks remain part of this task when those components exist.
+
 **Acceptance criteria:**
 
 - A repository CI workflow runs the established Go and frontend checks on PRs.
