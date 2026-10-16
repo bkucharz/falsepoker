@@ -589,6 +589,29 @@ Verification passed: five repeated race-enabled room/transport runs,
 
 **Dependencies:** 3.4.
 
+**Status:** complete. Added an external-package network harness in
+`internal/integration` with ephemeral HTTP/WebSocket servers, anonymous cookie
+jars, client-owned wire types, bounded reader queues, controlled lifecycle time,
+and seed-42 room randomness. All actions use the real protocol; the harness does
+not call engine evaluation or mutate/read private room state. Scenarios complete
+games and replay with explicit/random seats and starters, opening/raised bids,
+independently known true/false challenges, reveal, penalties, elimination and
+winners. They cover former spectators/eliminated players returning as private-hand
+participants, retained reveals after redeal/reconnect, lost challenge outcomes
+retried with the original context, concurrent duplicate/conflicting tabs, cached
+rejections, key conflicts and per-player/per-room retry scope, unauthorized rooms,
+expiry followed by spectator rejoin, and independent shuffle streams/state in
+two rooms. Every incoming payload is inspected; recipient snapshots are compared
+with an authorized observer at each committed revision. Adversarial fixtures
+prove those privacy checks reject exposed hands, undealt cards, credentials and
+incorrect card values. The only application seam is a registry seed-source
+constructor; default server randomness and all game behavior remain unchanged.
+README commands run the scenarios without a browser or separately started server.
+Verification passed: five repeated race-enabled integration runs,
+`go test -v ./internal/integration/... -count=1`, `go test -race ./...`,
+`go test -race -count=1 -cover ./...`, `go vet ./...`, `go mod tidy -diff`,
+formatting, and `git diff --check`. The phase 3 gate is satisfied.
+
 **Acceptance criteria:**
 
 - Add a reusable network test harness under `internal/integration`; start the

@@ -147,11 +147,21 @@ browser profile for a second player, initialize its session, and join the room.
 Closing the socket starts grace only after this player's final tab closes.
 Reopen the same URL with the same browser cookie within 60 seconds to receive a
 fresh snapshot of the same membership and hand; no HTTP rejoin is needed.
-The automated real-client gameplay scenario can also be run directly:
+Complete automated multiplayer scenarios can also be run directly:
 
 ```bash
-go test -v ./internal/transport -run '^TestWebSocketGameplayPrivacyAndReplay$' -count=1
+go test -v ./internal/integration/... -count=1
+go test -race ./internal/integration/...
 ```
+
+These headless clients start a server on an ephemeral loopback port and use real
+HTTP/WebSocket messages. The verbose run prints round outcomes through complete
+games and replay. Fixtures use seed 42 for reproducible seats, deals and shuffles,
+plus a controlled clock for reconnect/expiry; normal server randomness is unchanged.
+Every received payload is checked for authorized card visibility and unexpected
+private fields. Scenarios also cover lost acknowledgments, retries, conflicting
+tabs, spectator rejoin, and independent rooms. No running server, browser,
+database, or external service is needed.
 
 ## Verification and current limits
 

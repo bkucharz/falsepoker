@@ -56,6 +56,19 @@ func NewRegistry() *Registry {
 	return newRegistry(DefaultMaxRooms, DefaultMaxMembers)
 }
 
+// NewRegistryWithSeedSource supplies server-side seeds for reproducible games.
+// The registry serializes calls; each room still owns a separate random source.
+// Invitation codes and lifetime IDs remain cryptographic. Network clients cannot
+// supply seeds, and NewRegistry retains the normal cryptographic seed generator.
+func NewRegistryWithSeedSource(newSeed func() (int64, error)) (*Registry, error) {
+	if newSeed == nil {
+		return nil, errors.New("room seed source must be nonnil")
+	}
+	registry := NewRegistry()
+	registry.newSeed = newSeed
+	return registry, nil
+}
+
 // NewRegistryWithLimits configures operational capacity, independently of the
 // game's 24-participant limit. It must still permit a full 24-player game.
 func NewRegistryWithLimits(maxRooms, maxMembers int) (*Registry, error) {

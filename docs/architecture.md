@@ -63,7 +63,8 @@ phases 3.2/3.3; phase 3.4 implements disconnect and initial-attachment grace.
 The WebSocket adapter uses [Gorilla WebSocket v1.5.3](https://github.com/gorilla/websocket)
 for its maintained, tested RFC 6455 implementation, read limits, deadlines and
 Ping/Pong support. The standard library has no WebSocket implementation. This is
-the only external backend dependency; all its types stay in `internal/transport`.
+the only external backend dependency; its production socket types stay in
+`internal/transport`.
 Each socket has one reader and one writer. The writer handles snapshots,
 acknowledgments, application errors and heartbeat/control replies; Gorilla
 internally serializes its own protocol-error control frames. Compression is off.
@@ -79,6 +80,29 @@ to 256 per player-room for five minutes, with a combined bound of
 outcomes are never evicted to admit another command. HTTP and WS ingress share
 the session's rate budget, including retries. The lock order is session map,
 individual session, room, registry; room code never calls transport.
+
+## Network verification
+
+`internal/integration` contains a reusable headless-client test harness outside
+the transport package. Tests configure an ephemeral HTTP server, anonymous
+cookie jars, real WebSocket clients and controlled lifecycle time. All membership
+and gameplay actions go through the wire protocol; tests do not mutate rooms or
+read trusted engine state. `NewRegistryWithSeedSource` is the small server-side
+configuration seam for deterministic gameplay randomness. The default registry
+still obtains cryptographic seeds; codes/IDs remain cryptographic, and clients
+cannot choose seeds over the network. Each room owns its seeded generator.
+
+Client-owned wire structs strictly allow expected v1 fields. Every received
+frame is inspected before rendering, dropping an acknowledgment, or advancing a
+scenario. Local visibility checks derive roles from participation and phase;
+recipient snapshots at each committed revision are compared with an authorized
+spectator's cards and public state. Test-only fault fixtures verify those checks
+reject leaks. True/false claims are chosen from observable cards without calling
+the engine evaluator. Lost acknowledgments are simulated deterministically by
+discarding a validated outcome at the client receive boundary, then reconnecting
+and resending the exact original command. This proves retries against later
+state without depending on packet-loss timing. Bounded client queues, deadlines
+for awaited messages and joined readers make failures reproducible and finite.
 
 ## Concurrency
 

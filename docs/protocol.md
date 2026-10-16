@@ -6,6 +6,8 @@ This is the implementation contract for phases 3.2–3.5. Phases 3.2/3.3 impleme
 HTTP sessions/memberships and authenticated WebSocket gameplay with snapshots,
 retries, limits and heartbeat handling. Phase 3.4 implements initial-attachment
 and reconnect-grace timers, deadline enforcement and shutdown cleanup.
+Phase 3.5 verifies complete games, replay privacy, reconnect/retries, conflicting
+tabs, expiry/rejoin and room isolation through headless HTTP/WebSocket clients.
 See [the README](../README.md) for local HTTP and browser-console exercises. Gameplay follows
 [game-rules.md](game-rules.md); ownership and locking follow
 [architecture.md](architecture.md).
@@ -789,7 +791,7 @@ while WebSocket/lifecycle work remains. Rules stay outside transport:
 | 60-second initial attach and reconnect grace | 3.4 implements controllable timers, generation checks, authoritative deadline guards, and shutdown cleanup |
 | Full privacy projection / replay | Room views already filter hands; transport normalizes names, nullable fields, arrays, card/rank/suit enums, and decimal-string counters |
 | Production shuffle unpredictability | Before public use, replace predictable production RNG while retaining deterministic test injection; no seed endpoint is exposed |
-| Complete network evidence | 3.5 exercises real HTTP/WS payloads, lost acks, stale context, disconnects, and independent rooms |
+| Complete network evidence | 3.5 implements real HTTP/WS clients, complete games/replay, privacy checks, lost acks, stale/conflicting commands, reconnect/expiry, and independent rooms |
 
 Existing errors map without exposing raw Go error strings: room not-found/closed/
 not-member becomes `ROOM_UNAVAILABLE`; an already-member join becomes HTTP 200;

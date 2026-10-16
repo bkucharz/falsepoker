@@ -34,6 +34,21 @@ func TestRegistryCreateAndLookup(t *testing.T) {
 	}
 }
 
+func TestRegistrySeedSourceValidationAndFailure(t *testing.T) {
+	if registry, err := NewRegistryWithSeedSource(nil); registry != nil || err == nil {
+		t.Fatal("nil seed source accepted")
+	}
+	want := errors.New("seed unavailable")
+	registry, err := NewRegistryWithSeedSource(func() (int64, error) { return 0, want })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer registry.Close()
+	if created, err := registry.Create("admin", "Admin"); created != nil || !errors.Is(err, want) || len(registry.rooms) != 0 {
+		t.Fatalf("seed failure did not leave registry unchanged: %v", err)
+	}
+}
+
 func TestRegistryCodeCollision(t *testing.T) {
 	registry := deterministicRegistry()
 	codes := []string{"same", "same", "different"}
