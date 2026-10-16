@@ -70,6 +70,25 @@ are nonblocking and outgoing queues are bounded. A connection whose queue is ful
 is closed so it can reconnect and resynchronize; other connections continue.
 Socket writes run outside the room lock through one serialized writer per socket.
 
+The in-process room API assigns revision 1 at creation and increments it once per
+accepted state change, including lobby changes. Rejected operations, unchanged
+readiness, reads, and subscription setup/closure do not increment it. Revisions
+continue across games within one live room; they are not durable or global IDs.
+Both lobby snapshots and recipient views carry the room revision. Gameplay
+commands identify the observed game and round, and reject stale context before
+mutating state. Protocol-level request IDs, retry semantics, and expected-revision
+checks are specified in phase 3.
+
+`Room.Subscribe` registers one connection and queues its initial recipient view
+under the same lock, preventing a missed update between snapshot and subscription.
+Each connection owns a queue of 16 detached views, including the initial view.
+Overflow closes that subscription with `ErrSlowSubscriber` and discards its
+backlog; the transport must observe `Done` and close the socket outside the lock.
+Permanent departure closes all subscriptions for that member; room deletion
+closes the remaining subscriptions. Closing one subscription alone does not
+remove membership or withdraw a player. Connection counting and reconnect grace
+are implemented with the transport lifecycle in phase 3.
+
 ## Anonymous sessions and connections
 
 Use server-issued opaque anonymous credentials in an HttpOnly, same-origin cookie

@@ -318,6 +318,21 @@ through the pure Go API without networking, storage, timers, or a frontend.
 
 **Dependencies:** 0.2, Phase 1 gate.
 
+**Status:** complete. Added `internal/room` with collision-checked invitation codes,
+registry lookup/deletion, stable caller-supplied member identities, display names,
+readiness, admin-only starts, explicit/random seating and first-bidder selection,
+spectator joins, departure handling, and replay with a new game identity. Rooms
+own separate mutexes, games, and random generators; member-only lobby snapshots
+are detached and contain no cards or credentials. The 24-participant limit does
+not limit spectators. Tests cover code/source failures, invalid/duplicate members,
+start validation/atomicity, nonparticipating admins, elimination/admin succession,
+readiness reset/replay, closed references, isolation, and concurrent creation,
+lookup, joins, readiness, starts, and final-leave/join races. Fresh runs of
+`go test -race ./internal/room/... -cover -count=1` (97.4% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Participant-specific gameplay
+views, gameplay command forwarding/notifications, and connection timers remain
+in tasks 2.2, 2.3, and 3.4 respectively; no networking or storage was added.
+
 **Acceptance criteria:**
 
 - Create rooms with collision-checked invitation codes, join with a display name,
@@ -336,6 +351,23 @@ through the pure Go API without networking, storage, timers, or a frontend.
 
 **Dependencies:** 2.1.
 
+**Status:** complete. Added `Room.View` with explicit `RoomView`, `GameView`, and
+`PlayerView` types, retaining the lobby-only `Room.Snapshot` API. Membership checks,
+role selection, and view construction share the room mutex. Active participants
+receive only their own bidding hands; spectators, including eliminated players,
+receive survivors' hands. Resolution reveals all dealt cards, including departed
+players' cards, and completed-round results remain public after redealing. Views
+include game/round identity, phases, fixed seats, dealt counts versus required hand
+sizes, turn/starter, last bid/result, and winner; they exclude the undealt deck and
+credentials. Roles are recomputed for each view and new game. Mutable view data is
+detached from the engine and other recipients. Table-driven and concurrent tests
+cover lobby/access errors, bidding, resolution, redealing, elimination, challenge
+and departure wins, admin-independent visibility, replay access reset, serialized
+card privacy, and ownership. Fresh runs of
+`go test -race ./internal/room/... -cover -count=1` (97.8% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Gameplay forwarding and
+notifications remain in 2.3; the spectator hold-to-peek control belongs to the UI.
+
 **Acceptance criteria:**
 
 - Explicit view types expose public room/game state and the recipient's authorized
@@ -353,6 +385,26 @@ through the pure Go API without networking, storage, timers, or a frontend.
 ### 2.3 — Serialize commands and order notifications
 
 **Dependencies:** 2.2.
+
+**Status:** complete. Added room-level bid, challenge, and next-round commands
+with game/round context validation. The existing room mutex encloses validation,
+mutation, readiness reset on game completion, revision assignment, and publication.
+Lobby changes and game starts use the same revision/publication path. Revisions
+start at 1 and continue across replays; errors and unchanged readiness do not
+advance them. Member-only subscriptions atomically queue an initial view and
+receive independently owned recipient views in revision order. Each connection
+has a bounded 16-view queue; overflow closes only that subscription, discards its
+backlog, and signals the future transport to close its socket. Close is idempotent;
+departures/deletion clean up subscriptions without treating a closed connection as
+an immediate withdrawal. Earlier phase tests now drive gameplay through the room
+API. Tests cover complete-game/replay behavior, stale context, errors without
+mutation/notification, simultaneous challenges/advancements, conflicting commands,
+concurrent views and subscription setup/closure, ordered revisions, snapshot
+ownership/privacy, role changes, slow subscribers, and independent-room progress.
+Fresh runs of `go test -race ./internal/room/... -cover -count=1`
+(98.4% statement coverage), `go test ./... -count=1`, and `go vet ./...` passed.
+No networking or storage was added; socket I/O, request retries, and connection
+grace timers remain in phase 3.
 
 **Acceptance criteria:**
 
