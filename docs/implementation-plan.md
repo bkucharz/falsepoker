@@ -212,6 +212,20 @@ empty unions, invalid input, and card-order independence. Fresh runs of
 
 **Dependencies:** 0.1, 1.2.
 
+**Status:** complete. Added private game state, stable participant IDs and seat
+order, explicit game/round phases, round-one initialization with injected
+randomness, and the approved elimination limit for every supported player count.
+`PlaceBid` records opening bids/strict raises and advances past eliminated seats;
+`ValidateChallenge` checks eligibility without resolving a challenge. Copied
+snapshots expose full state only to trusted domain callers. Table-driven tests
+cover configuration errors, turn order/wraparound, eliminated/unknown actors,
+legal bluffs, invalid/equal/lower/suit-only raises, challenge eligibility, snapshot
+ownership, and rejection without state mutation. Fresh runs of
+`go test ./internal/game -cover -count=1` (97.5% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Challenge resolution and
+round progression remain in tasks 1.6–1.7; room/admin/readiness policies remain
+outside the engine.
+
 **Acceptance criteria:**
 
 - Initialize stable player identities/order, required hand sizes, current limit,
