@@ -318,6 +318,21 @@ through the pure Go API without networking, storage, timers, or a frontend.
 
 **Dependencies:** 0.2, Phase 1 gate.
 
+**Status:** complete. Added `internal/room` with collision-checked invitation codes,
+registry lookup/deletion, stable caller-supplied member identities, display names,
+readiness, admin-only starts, explicit/random seating and first-bidder selection,
+spectator joins, departure handling, and replay with a new game identity. Rooms
+own separate mutexes, games, and random generators; member-only lobby snapshots
+are detached and contain no cards or credentials. The 24-participant limit does
+not limit spectators. Tests cover code/source failures, invalid/duplicate members,
+start validation/atomicity, nonparticipating admins, elimination/admin succession,
+readiness reset/replay, closed references, isolation, and concurrent creation,
+lookup, joins, readiness, starts, and final-leave/join races. Fresh runs of
+`go test -race ./internal/room/... -cover -count=1` (97.4% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed. Participant-specific gameplay
+views, gameplay command forwarding/notifications, and connection timers remain
+in tasks 2.2, 2.3, and 3.4 respectively; no networking or storage was added.
+
 **Acceptance criteria:**
 
 - Create rooms with collision-checked invitation codes, join with a display name,
