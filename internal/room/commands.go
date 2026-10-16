@@ -39,6 +39,7 @@ func (r *Room) NextRound(actor game.PlayerID, context GameContext) error {
 func (r *Room) gameCommand(actor game.PlayerID, context GameContext, apply func(*game.Game) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	return r.gameCommandLocked(actor, context, apply)
 }
 

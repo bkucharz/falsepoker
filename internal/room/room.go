@@ -66,6 +66,8 @@ type Room struct {
 	subscribers map[*Subscription]struct{}
 	playerNames map[game.PlayerID]string
 	retries     map[game.PlayerID]map[string]commandRecord
+	clock       Clock
+	grace       map[game.PlayerID]*gracePeriod
 }
 
 // Code is an immutable invitation identifier; it does not expose room state.
@@ -79,6 +81,7 @@ func (r *Room) ID() string { return r.id }
 func (r *Room) Join(id game.PlayerID, displayName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	return r.joinLocked(id, displayName)
 }
 
@@ -87,6 +90,7 @@ func (r *Room) Join(id game.PlayerID, displayName string) error {
 func (r *Room) JoinWithMembership(id game.PlayerID, displayName string) (Membership, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	err := r.joinLocked(id, displayName)
 	if err != nil && err != ErrAlreadyMember {
 		return Membership{}, false, err
@@ -109,6 +113,7 @@ func (r *Room) joinLocked(id game.PlayerID, displayName string) error {
 		return ErrRoomFull
 	}
 	r.members = append(r.members, member)
+	r.startGraceLocked(id)
 	r.publishLocked()
 	return nil
 }
@@ -118,6 +123,7 @@ func (r *Room) joinLocked(id game.PlayerID, displayName string) error {
 func (r *Room) SetReady(actor game.PlayerID, ready bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	return r.setReadyLocked(actor, ready)
 }
 
@@ -141,6 +147,7 @@ func (r *Room) setReadyLocked(actor game.PlayerID, ready bool) error {
 func (r *Room) Start(actor game.PlayerID, options StartOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	return r.startLocked(actor, options)
 }
 
@@ -213,6 +220,7 @@ func (r *Room) startLocked(actor game.PlayerID, options StartOptions) error {
 func (r *Room) Leave(actor game.PlayerID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	return r.leaveLocked(actor)
 }
 
@@ -220,6 +228,7 @@ func (r *Room) Leave(actor game.PlayerID) error {
 func (r *Room) LeaveRoom(actor game.PlayerID, roomID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	if _, err := r.requireMember(actor); err != nil {
 		return err
 	}
@@ -250,10 +259,12 @@ func (r *Room) leaveLocked(actor game.PlayerID) error {
 			}
 		}
 	}
+	r.cancelGraceLocked(actor)
 	r.members = slices.Delete(r.members, seat, seat+1)
 	if len(r.members) == 0 {
 		r.closed = true
 		r.registry.remove(r)
+		r.retries, r.playerNames, r.game = nil, nil, nil
 	} else if actor == r.admin {
 		r.admin = r.members[r.rng.Intn(len(r.members))].ID
 	}
@@ -271,6 +282,7 @@ func (r *Room) leaveLocked(actor game.PlayerID) error {
 func (r *Room) Snapshot(actor game.PlayerID) (LobbyState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	if _, err := r.requireMember(actor); err != nil {
 		return LobbyState{}, err
 	}
@@ -300,6 +312,7 @@ func (r *Room) requireMember(actor game.PlayerID) (int, error) {
 func (r *Room) Membership(actor game.PlayerID) (Membership, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	if _, err := r.requireMember(actor); err != nil {
 		return Membership{}, err
 	}

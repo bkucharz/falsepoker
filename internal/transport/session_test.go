@@ -5,22 +5,22 @@ import (
 	"errors"
 	"math"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/bkucharz/falsepoker/internal/room"
+	"github.com/bkucharz/falsepoker/internal/testclock"
 )
 
-type controlledClock struct{ nanos atomic.Int64 }
+type controlledClock struct{ *testclock.Clock }
 
 func newClock() *controlledClock {
-	c := &controlledClock{}
-	c.nanos.Store(time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC).UnixNano())
-	return c
+	return &controlledClock{testclock.New()}
 }
-func (c *controlledClock) now() time.Time          { return time.Unix(0, c.nanos.Load()) }
-func (c *controlledClock) advance(d time.Duration) { c.nanos.Add(int64(d)) }
+func (c *controlledClock) AfterFunc(d time.Duration, callback func()) room.Timer {
+	return c.Clock.AfterFunc(d, callback)
+}
+func (c *controlledClock) advance(d time.Duration) { c.Advance(d) }
 
 func TestHTTPRetryConflictAndRejectedOutcome(t *testing.T) {
 	f := newFixture(t, Config{Limits: Limits{MaxMemberships: 1}}, false)
@@ -57,7 +57,7 @@ func TestHTTPRetryConflictAndRejectedOutcome(t *testing.T) {
 
 func TestHTTPRetryStorageIsBoundedWithoutEarlyEviction(t *testing.T) {
 	clock := newClock()
-	f := newFixture(t, Config{Now: clock.now, Limits: Limits{MaxRetryRecords: 1}}, false)
+	f := newFixture(t, Config{Clock: clock, Limits: Limits{MaxRetryRecords: 1}}, false)
 	client, _ := f.actor(t)
 	key := f.key()
 	first := f.request(t, client, "POST", "/api/v1/rooms", `{"display_name":"First"}`, key, nil)
@@ -108,10 +108,13 @@ func TestHTTPRoomCapacityRejectsWithoutCachingTransientFailure(t *testing.T) {
 
 func TestHTTPIdleSessionsExpireButMembersRemain(t *testing.T) {
 	clock := newClock()
-	f := newFixture(t, Config{Now: clock.now}, false)
+	f := newFixture(t, Config{Clock: clock}, false)
 	idle, _ := f.actor(t)
 	member, memberID := f.actor(t)
 	created := f.create(t, member, "Member")
+	// A live connection retains membership; an abandoned HTTP join now expires
+	// after its initial attachment grace instead of retaining a session forever.
+	f.connect(t, member, created)
 	clock.advance(24 * time.Hour)
 	expired := f.request(t, idle, "POST", "/api/v1/session", "{}", "", nil)
 	errorCode(t, expired, 401, "SESSION_EXPIRED")
@@ -136,7 +139,7 @@ func TestHTTPIdleSessionsExpireButMembersRemain(t *testing.T) {
 
 func TestHTTPSessionCapacityAndCleanup(t *testing.T) {
 	clock := newClock()
-	f := newFixture(t, Config{Now: clock.now, Limits: Limits{MaxSessions: 1}}, false)
+	f := newFixture(t, Config{Clock: clock, Limits: Limits{MaxSessions: 1}}, false)
 	first, _ := f.actor(t)
 	other := f.client(t)
 	errorCode(t, f.request(t, other, "POST", "/api/v1/session", "{}", "", nil), 503, "SERVER_BUSY")
@@ -149,7 +152,7 @@ func TestHTTPSessionCapacityAndCleanup(t *testing.T) {
 
 func TestHTTPIngressLimitsIncludeCachedRetries(t *testing.T) {
 	clock := newClock()
-	f := newFixture(t, Config{Now: clock.now, Limits: Limits{MutationRate: 1, MutationBurst: 1, BootstrapRate: 1, BootstrapBurst: 1}}, false)
+	f := newFixture(t, Config{Clock: clock, Limits: Limits{MutationRate: 1, MutationBurst: 1, BootstrapRate: 1, BootstrapBurst: 1}}, false)
 	client, _ := f.actor(t)
 	other := f.client(t)
 	errorCode(t, f.request(t, other, "POST", "/api/v1/session", "{}", "", nil), 429, "RATE_LIMITED")

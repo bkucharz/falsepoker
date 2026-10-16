@@ -36,7 +36,8 @@ const (
 )
 
 // Registry owns room lookup and lifetime. Construct it with NewRegistry.
-// Its lock never nests a room lock; individual rooms synchronize their own state.
+// Existing rooms are never locked under the registry lock; individual rooms
+// synchronize their own state. Creation initializes an unpublished room first.
 type Registry struct {
 	mu         sync.Mutex
 	rooms      map[string]*Room
@@ -45,6 +46,10 @@ type Registry struct {
 	newID      func() (string, error)
 	maxRooms   int
 	maxMembers int
+	clock      Clock
+	closed     bool
+	timerWG    sync.WaitGroup
+	closeOnce  sync.Once
 }
 
 func NewRegistry() *Registry {
@@ -104,6 +109,9 @@ func (r *Registry) CreateWithMembership(creator game.PlayerID, displayName strin
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return nil, Membership{}, ErrRoomClosed
+	}
 	if len(r.rooms) >= r.maxRooms {
 		return nil, Membership{}, ErrRegistryFull
 	}
@@ -134,9 +142,16 @@ func (r *Registry) CreateWithMembership(creator game.PlayerID, displayName strin
 			revision: 1,
 			members:  []Member{member},
 			rng:      mathrand.New(mathrand.NewSource(seed)),
+			clock:    r.clock,
 		}
+		// This room is unpublished: locking it here cannot invert the existing
+		// room -> registry lock order. Callbacks wait for complete initialization.
+		room.mu.Lock()
+		room.startGraceLocked(creator)
 		r.rooms[code] = room
-		return room, room.membershipLocked(creator), nil
+		membership := room.membershipLocked(creator)
+		room.mu.Unlock()
+		return room, membership, nil
 	}
 	return nil, Membership{}, ErrCodeUnavailable
 }

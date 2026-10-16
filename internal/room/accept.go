@@ -55,6 +55,7 @@ func (s *Subscription) Execute(command Command, now time.Time) CommandResult {
 	r := s.room
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	result := CommandResult{Revision: r.revision}
 	if _, exists := r.subscribers[s]; !exists {
 		result.Err = ErrSubscriptionClosed

@@ -484,8 +484,8 @@ privacy across phases/replay. `go test -race -count=1 -cover ./...` passed
 `go run ./cmd/server -dev-http` plus curl smoke test verified health, separate
 sessions, create/retry, join, member read, admin transfer, final leave, and replay
 of that leave after deletion. The README contains local run/curl instructions.
-WebSockets and connection/grace timers remain in 3.3/3.4; HTTP memberships currently
-end only through explicit leave or process restart. No database or frontend was added.
+At completion of 3.2, HTTP memberships ended through explicit leave or restart;
+3.3/3.4 add WebSockets and connection-grace timers. No database or frontend was added.
 
 **Acceptance criteria:**
 
@@ -545,6 +545,27 @@ Verification passed: `go test -race ./internal/transport/... ./internal/room/...
 ### 3.4 — Restore sessions and manage connection/room lifetimes
 
 **Dependencies:** 3.3.
+
+**Status:** complete. Room coordination owns 60-second initial-attachment and
+last-connection grace periods. Atomic attachment cancels expiry and queues a fresh
+recipient snapshot; multiple tabs keep one membership, role, seat and hand.
+Unique grace-period tokens reject stale callbacks across reconnect, later
+disconnects, rejoining and reused room codes. Reads and mutations settle overdue
+deadlines before authorization/admission, including when callbacks are delayed.
+Expiry follows the existing serialized departure path: retain current-round
+cards/bids, skip withdrawn turns, transfer admin/next starter, award a winner when
+one participant remains, and delete an empty room. Occupied lobbies and finished
+rooms have no inactivity expiry. The shared clock controls both elapsed time and
+callback dispatch in tests. Shutdown cancels and joins timers, closes sockets,
+and discards room/session/retry state. Tests cover exact deadline boundaries,
+expiry racing with reconnect/moves, stale/early/dispatched callbacks, slow tabs,
+unchanged private hands and previous-round reveals on reconnect, new spectator
+memberships after expiry, released room capacity, credential expiry, and state
+loss after restart. The README documents attachment deadlines and manual reconnect.
+No UI, storage, additional dependency, or turn timeout was added.
+Verification passed: five repeated race-enabled room/transport runs,
+`go test -race -count=1 -cover ./...`, `go test ./...`, `go vet ./...`,
+`go mod tidy -diff`, formatting, and `git diff --check`.
 
 **Acceptance criteria:**
 

@@ -613,7 +613,7 @@ func TestWebSocketLimitsRateAndShutdown(t *testing.T) {
 	})
 	t.Run("shared rate", func(t *testing.T) {
 		clock := newClock()
-		f := newFixture(t, Config{Now: clock.now, Limits: Limits{MutationRate: 1, MutationBurst: 2}}, false)
+		f := newFixture(t, Config{Clock: clock, Limits: Limits{MutationRate: 1, MutationBurst: 2}}, false)
 		client, _ := f.actor(t)
 		m := f.create(t, client, "Owner")
 		s := f.connect(t, client, m)

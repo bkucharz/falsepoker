@@ -144,6 +144,9 @@ arrival order is unspecified. Each new action needs a new request ID and the
 latest snapshot context. See [the protocol](docs/protocol.md) for start, bid,
 challenge, and next-round payloads. Another tab shares this player; use a separate
 browser profile for a second player, initialize its session, and join the room.
+Closing the socket starts grace only after this player's final tab closes.
+Reopen the same URL with the same browser cookie within 60 seconds to receive a
+fresh snapshot of the same membership and hand; no HTTP rejoin is needed.
 The automated real-client gameplay scenario can also be run directly:
 
 ```bash
@@ -165,9 +168,11 @@ service. Race detection needs a supported platform and a C compiler.
 
 HTTP and WebSocket gameplay work in memory; there is no UI or persistence yet.
 Reconnect with the same cookie and room lifetime receives a fresh snapshot and
-can recover cached command outcomes for five minutes. Disconnect and initial
-attachment grace timers are deferred to phase 3.4: closing a socket currently
-retains membership until explicit leave or server restart.
+can recover cached command outcomes for five minutes. Initial attachment and
+last-connection loss both allow 60 seconds. Expiry applies normal departure
+rules, transfers admin when needed, and deletes an empty room. Connected players
+have no turn timeout; occupied lobbies and finished rooms have no inactivity
+timeout. Restart loses credentials and rooms; it cannot restore a previous game.
 
 - [Protocol](docs/protocol.md)
 - [Architecture](docs/architecture.md)

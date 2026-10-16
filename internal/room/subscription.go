@@ -39,6 +39,7 @@ func (r *Room) Subscribe(actor game.PlayerID) (*Subscription, error) {
 func (r *Room) SubscribeLimited(actor game.PlayerID, roomID string, limit int) (*Subscription, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	if _, err := r.requireMember(actor); err != nil {
 		return nil, err
 	}
@@ -54,6 +55,7 @@ func (r *Room) SubscribeLimited(actor game.PlayerID, roomID string, limit int) (
 	if limit > 0 && count >= limit {
 		return nil, ErrConnectionLimit
 	}
+	r.cancelGraceLocked(actor)
 	sub := &Subscription{
 		room: r, actor: actor, updates: make(chan RoomView, SubscriberQueueCapacity),
 		done: make(chan struct{}),
@@ -72,13 +74,14 @@ func (s *Subscription) Updates() <-chan RoomView { return s.updates }
 
 // Done closes when unsubscribed, on permanent departure/room deletion, or on
 // overflow. A transport must stop writing and close its connection on Done;
-// socket I/O and reconnect-grace handling run outside the room lock/package.
+// socket I/O runs outside the room lock/package.
 func (s *Subscription) Done() <-chan struct{} { return s.done }
 
 // Revision returns authorized metadata only while the connection is registered.
 func (s *Subscription) Revision() (uint64, error) {
 	s.room.mu.Lock()
 	defer s.room.mu.Unlock()
+	s.room.settleLocked()
 	if _, ok := s.room.subscribers[s]; !ok {
 		return 0, ErrSubscriptionClosed
 	}
@@ -93,8 +96,8 @@ func (s *Subscription) Err() error {
 	return s.err
 }
 
-// Close is idempotent. It does not leave the room or withdraw a participant;
-// connection lifetime and disconnect grace belong to the transport lifecycle.
+// Close is idempotent. Closing the final subscription starts reconnect grace;
+// membership and participation remain intact until explicit leave or expiry.
 func (s *Subscription) Close() {
 	s.room.mu.Lock()
 	defer s.room.mu.Unlock()
@@ -131,4 +134,5 @@ func (r *Room) closeSubscriptionLocked(sub *Subscription, err error) {
 	close(sub.updates)
 	for range sub.updates {
 	}
+	r.startGraceLocked(sub.actor)
 }

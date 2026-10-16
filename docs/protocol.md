@@ -4,7 +4,8 @@
 
 This is the implementation contract for phases 3.2–3.5. Phases 3.2/3.3 implement
 HTTP sessions/memberships and authenticated WebSocket gameplay with snapshots,
-retries, limits and heartbeat handling. Connection-grace timers remain in 3.4.
+retries, limits and heartbeat handling. Phase 3.4 implements initial-attachment
+and reconnect-grace timers, deadline enforcement and shutdown cleanup.
 See [the README](../README.md) for local HTTP and browser-console exercises. Gameplay follows
 [game-rules.md](game-rules.md); ownership and locking follow
 [architecture.md](architecture.md).
@@ -785,7 +786,7 @@ while WebSocket/lifecycle work remains. Rules stay outside transport:
 | Retained participant display names | 3.2 captures a small game roster for views/results; engine remains identity-based |
 | Ready/start/bid/challenge/next round | Room mutations exist; 3.3 adds atomic expected-context/revision and WS duplicate handling **inside room coordination**, plus structured error mapping |
 | Multiple tabs / initial snapshot / overflow | Room subscriptions exist; 3.3 wires bounded writer/heartbeat/close behavior, 3.4 serializes connection counts and timers with attach/leave |
-| 60-second initial attach and reconnect grace | 3.4 adds controllable timers and generation checks; apply the initial timer to HTTP-created memberships too |
+| 60-second initial attach and reconnect grace | 3.4 implements controllable timers, generation checks, authoritative deadline guards, and shutdown cleanup |
 | Full privacy projection / replay | Room views already filter hands; transport normalizes names, nullable fields, arrays, card/rank/suit enums, and decimal-string counters |
 | Production shuffle unpredictability | Before public use, replace predictable production RNG while retaining deterministic test injection; no seed endpoint is exposed |
 | Complete network evidence | 3.5 exercises real HTTP/WS payloads, lost acks, stale context, disconnects, and independent rooms |

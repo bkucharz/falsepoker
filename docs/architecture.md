@@ -58,7 +58,7 @@ identity, and a room lifetime identifier distinct from the invitation code.
 New commands require the observed room revision; duplicate decisions and revision
 checks share the room's mutation boundary. HTTP and WebSocket retry outcomes have
 bounded five-minute retention. HTTP and WebSocket commands are implemented in
-phases 3.2/3.3; disconnect-grace timers remain in phase 3.4.
+phases 3.2/3.3; phase 3.4 implements disconnect and initial-attachment grace.
 
 The WebSocket adapter uses [Gorilla WebSocket v1.5.3](https://github.com/gorilla/websocket)
 for its maintained, tested RFC 6455 implementation, read limits, deadlines and
@@ -114,8 +114,9 @@ Overflow closes that subscription with `ErrSlowSubscriber` and discards its
 backlog; the transport must observe `Done` and close the socket outside the lock.
 Permanent departure closes all subscriptions for that member; room deletion
 closes the remaining subscriptions. Closing one subscription alone does not
-remove membership or withdraw a player. Connection counting and reconnect grace
-are implemented with the transport lifecycle in phase 3.
+remove membership or withdraw a player. Closing the final subscription starts
+reconnect grace; closing one of several tabs does not. Queue overflow uses the
+same last-connection policy.
 
 ## Anonymous sessions and connections
 
@@ -136,6 +137,27 @@ current disconnected state and timer generation before withdrawing a player.
 For a newly created/joined HTTP membership that has not opened a socket yet, allow
 the same 60 seconds for its first attachment. Repeated HTTP reads/joins do not
 extend that deadline. After expiry, ordinary permanent-departure rules apply.
+
+The server owns an unused room registry and enables its reconnect lifecycle at
+construction. Each disconnected membership has one cancellable timer and an
+absolute server deadline. A unique grace-period object acts as a generation
+token. Attachment cancels that token under the same room lock that registers the
+subscription and queues its initial snapshot. Old callbacks verify the current
+token before acting; they cannot withdraw a reconnected or rejoined member.
+Room reads and mutations settle overdue deadlines first, so a delayed callback
+cannot permit an attachment at/after expiry or a move against expired membership.
+Expiry calls the existing serialized departure path rather than adding another
+implementation of withdrawal or game rules. Connection changes do not themselves
+advance revision; each permanent departure does.
+
+An injectable `room.Clock` supplies `Now` and `AfterFunc`; the real adapter uses
+Go's monotonic time and timers. Tests control elapsed time and callback dispatch
+separately, including callbacks already waiting for the room lock. This replaces
+the earlier time-only transport test hook so sessions and lifecycle share one
+clock. Pure game logic has no timers or networking dependencies. Shutdown stops
+socket admission, closes live sockets with 1001, closes the registry, cancels
+timers, and waits for already-running callbacks and socket goroutines. Registry
+shutdown never waits for callbacks while holding a registry or room lock.
 
 Build views according to game role, independently of admin privileges. Active
 players cannot inspect opponents' hands; all spectators, including eliminated

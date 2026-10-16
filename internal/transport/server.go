@@ -44,13 +44,14 @@ type Limits struct {
 type Config struct {
 	Origin               string
 	AllowInsecureCookies bool           // explicit loopback HTTP development only
-	Registry             *room.Registry // nil creates a registry with default limits
+	Registry             *room.Registry // server owns an unused registry; nil creates one
 	Limits               Limits
-	Now                  func() time.Time // nil uses time.Now; tests may supply a controlled clock
+	Clock                room.Clock // nil uses real time; tests control time and callback dispatch together
 }
 
-// Server owns sessions, HTTP retry ledgers and live sockets. Close stops cleanup
-// and socket goroutines; callers separately shut down the enclosing http.Server.
+// Server owns sessions, HTTP retry ledgers, its registry and live sockets. Close
+// discards state and stops timers/socket goroutines; callers separately shut down
+// the enclosing http.Server.
 type Server struct {
 	registry      *room.Registry
 	origin        string
@@ -118,12 +119,15 @@ func NewServer(config Config) (*Server, error) {
 	if config.Registry == nil {
 		config.Registry = room.NewRegistry()
 	}
-	if config.Now == nil {
-		config.Now = time.Now
+	if config.Clock == nil {
+		config.Clock = systemClock{}
+	}
+	if err := config.Registry.EnableReconnectGrace(config.Clock); err != nil {
+		return nil, err
 	}
 	s := &Server{
 		registry: config.Registry, origin: config.Origin, secureCookies: !config.AllowInsecureCookies,
-		limits: l, now: config.Now, entropy: rand.Reader,
+		limits: l, now: config.Clock.Now, entropy: rand.Reader,
 		sessions: make(map[[32]byte]*session), players: make(map[game.PlayerID]bool),
 		bootstrap: make(map[string]*bucket), stop: make(chan struct{}), done: make(chan struct{}),
 		sockets: make(map[*socket]struct{}),
@@ -142,9 +146,29 @@ func (s *Server) Close() {
 			conn.stop(1001, "Server shutdown")
 		}
 		s.socketMu.Unlock()
+		s.registry.Close()
+		s.mu.Lock()
+		for _, sess := range s.sessions {
+			sess.mu.Lock()
+			sess.active = false
+			clear(sess.memberships)
+			clear(sess.retries)
+			sess.mu.Unlock()
+		}
+		clear(s.sessions)
+		clear(s.players)
+		clear(s.bootstrap)
+		s.mu.Unlock()
 	})
 	<-s.done
 	s.socketWG.Wait()
+}
+
+type systemClock struct{}
+
+func (systemClock) Now() time.Time { return time.Now() }
+func (c systemClock) AfterFunc(d time.Duration, callback func()) room.Timer {
+	return time.AfterFunc(d, callback)
 }
 
 func loopbackHost(host string) bool {
@@ -217,6 +241,9 @@ func (s *Server) cleanupLocked(now time.Time) {
 func (s *Server) newSession(remote string) (*session, string, *failure) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closing.Load() {
+		return nil, "", transient(503, "SHUTTING_DOWN", "The server is shutting down.", 1)
+	}
 	now := s.now()
 	s.cleanupLocked(now)
 	ip, _, err := net.SplitHostPort(remote)

@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -73,6 +74,14 @@ func (s *Server) upgrade(w http.ResponseWriter, r *http.Request, sess *session, 
 	}
 	if membership.RoomID != query.Get("room_id") {
 		writeResponse(w, errorResponse("", roomFailure(room.ErrStaleRoom)))
+		return
+	}
+	// Reject malformed handshakes before attachment can cancel a grace timer.
+	// Once admitted, a network failure during upgrade is a connection loss.
+	keys := r.Header.Values("Sec-WebSocket-Key")
+	key, keyErr := base64.StdEncoding.DecodeString(r.Header.Get("Sec-WebSocket-Key"))
+	if !websocket.IsWebSocketUpgrade(r) || r.Header.Get("Sec-WebSocket-Version") != "13" || len(keys) != 1 || keyErr != nil || len(key) != 16 {
+		writeResponse(w, errorResponse("", invalidJSON()))
 		return
 	}
 	// Reserve process capacity before allocating per-connection queues. Pending

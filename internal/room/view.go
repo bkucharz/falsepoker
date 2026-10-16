@@ -69,6 +69,7 @@ type GameView struct {
 func (r *Room) View(actor game.PlayerID) (RoomView, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	if _, err := r.requireMember(actor); err != nil {
 		return RoomView{}, err
 	}
