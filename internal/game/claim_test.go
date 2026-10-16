@@ -151,7 +151,7 @@ func TestClaimInvalidInputs(t *testing.T) {
 	}
 }
 
-func TestClaimUnsupportedCategories(t *testing.T) {
+func TestSequenceAndSuitClaimsEmptyUnion(t *testing.T) {
 	tests := []struct {
 		name string
 		bid  game.Bid
@@ -164,9 +164,11 @@ func TestClaimUnsupportedCategories(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.bid.IsSatisfiedBy(nil)
-			if got || !errors.Is(err, game.ErrUnsupportedBidCategory) {
-				t.Fatalf("unsupported category = (%t, %v); want (false, ErrUnsupportedBidCategory)", got, err)
+			for _, cards := range [][]game.Card{nil, {}} {
+				got, err := tt.bid.IsSatisfiedBy(cards)
+				if got || err != nil {
+					t.Fatalf("empty union = (%t, %v); want (false, nil)", got, err)
+				}
 			}
 		})
 	}

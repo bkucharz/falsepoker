@@ -144,8 +144,8 @@ and strict raise comparison with suit-independent ordering. Table-driven tests
 cover every category pairing, primary/secondary rank ordering, equal bids, suit
 changes, highest-category bids, and invalid parameters on either comparison input.
 Fresh runs of `go test ./internal/game -cover -count=1` (100% statement coverage),
-`go test ./... -count=1`, and `go vet ./...` passed. Claim evaluation is deferred
-to tasks 1.3 and 1.4.
+`go test ./... -count=1`, and `go vet ./...` passed. Claim evaluation is covered
+separately by tasks 1.3 and 1.4.
 
 **Acceptance criteria:**
 
@@ -169,8 +169,8 @@ Evaluation validates bids and physical cards, rejects duplicates, checks the
 exact claimed ranks, accepts surplus matches, and leaves input unchanged.
 Table-driven tests include empty/insufficient unions and combinations split across
 hands. Fresh runs of `go test ./internal/game -cover -count=1` (100% statement
-coverage), `go test ./... -count=1`, and `go vet ./...` passed. Valid sequence/suit
-claims return `ErrUnsupportedBidCategory` until task 1.4 adds their evaluation.
+coverage), `go test ./... -count=1`, and `go vet ./...` passed at completion of
+this task. The same evaluator now supports sequence/suit claims through task 1.4.
 
 **Acceptance criteria:**
 
@@ -186,6 +186,16 @@ claims return `ErrUnsupportedBidCategory` until task 1.4 adds their evaluation.
 ### 1.4 — Evaluate sequence- and suit-based claims
 
 **Dependencies:** 1.2, 1.3.
+
+**Status:** complete. Extended `Bid.IsSatisfiedBy` to low/high straights, ordinary
+flushes, straight flushes, and royal straight flushes; removed the temporary
+unsupported-category error. Shared rank/suit counts check exact sequences and
+named suits, while any five of a named suit satisfy an ordinary flush.
+Table-driven tests cover all suits, every missing sequence rank, wrong-suit
+substitutions, surplus cards, both straights in one union, all six suited cards,
+empty unions, invalid input, and card-order independence. Fresh runs of
+`go test ./internal/game -cover -count=1` (98.8% statement coverage),
+`go test ./... -count=1`, and `go vet ./...` passed.
 
 **Acceptance criteria:**
 
