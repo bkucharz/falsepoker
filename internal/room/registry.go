@@ -25,20 +25,70 @@ var (
 	ErrNotAdmin        = errors.New("only the room admin may start a game")
 	ErrGameInProgress  = errors.New("game is in progress")
 	ErrInvalidStart    = errors.New("invalid game start options")
+	ErrRoomFull        = errors.New("room member capacity reached")
+	ErrRegistryFull    = errors.New("room registry capacity reached")
+	ErrStaleRoom       = errors.New("room lifetime does not match")
+)
+
+const (
+	DefaultMaxRooms   = 128
+	DefaultMaxMembers = 64
 )
 
 // Registry owns room lookup and lifetime. Construct it with NewRegistry.
-// Its lock never nests a room lock; individual rooms synchronize their own state.
+// Existing rooms are never locked under the registry lock; individual rooms
+// synchronize their own state. Creation initializes an unpublished room first.
 type Registry struct {
-	mu      sync.Mutex
-	rooms   map[string]*Room
-	newCode func() (string, error)
-	newSeed func() (int64, error)
+	mu         sync.Mutex
+	rooms      map[string]*Room
+	newCode    func() (string, error)
+	newSeed    func() (int64, error)
+	newID      func() (string, error)
+	maxRooms   int
+	maxMembers int
+	clock      Clock
+	closed     bool
+	timerWG    sync.WaitGroup
+	closeOnce  sync.Once
 }
 
 func NewRegistry() *Registry {
+	return newRegistry(DefaultMaxRooms, DefaultMaxMembers)
+}
+
+// NewRegistryWithSeedSource supplies server-side seeds for reproducible games.
+// The registry serializes calls; each room still owns a separate random source.
+// Invitation codes and lifetime IDs remain cryptographic. Network clients cannot
+// supply seeds, and NewRegistry retains the normal cryptographic seed generator.
+func NewRegistryWithSeedSource(newSeed func() (int64, error)) (*Registry, error) {
+	if newSeed == nil {
+		return nil, errors.New("room seed source must be nonnil")
+	}
+	registry := NewRegistry()
+	registry.newSeed = newSeed
+	return registry, nil
+}
+
+// NewRegistryWithLimits configures operational capacity, independently of the
+// game's 24-participant limit. It must still permit a full 24-player game.
+func NewRegistryWithLimits(maxRooms, maxMembers int) (*Registry, error) {
+	if maxRooms < 1 || maxMembers < game.DeckSize {
+		return nil, errors.New("room limits require positive room capacity and at least 24 members")
+	}
+	return newRegistry(maxRooms, maxMembers), nil
+}
+
+func newRegistry(maxRooms, maxMembers int) *Registry {
 	return &Registry{
-		rooms: make(map[string]*Room),
+		rooms:    make(map[string]*Room),
+		maxRooms: maxRooms, maxMembers: maxMembers,
+		newID: func() (string, error) {
+			var bytes [16]byte
+			if _, err := rand.Read(bytes[:]); err != nil {
+				return "", err
+			}
+			return "r_" + hex.EncodeToString(bytes[:]), nil
+		},
 		newCode: func() (string, error) {
 			var bytes [6]byte
 			if _, err := rand.Read(bytes[:]); err != nil {
@@ -59,39 +109,64 @@ func NewRegistry() *Registry {
 // Create makes the creator the sole admin, initially not ready. Each room gets
 // a separate random generator; code and seed generation are serialized here.
 func (r *Registry) Create(creator game.PlayerID, displayName string) (*Room, error) {
+	created, _, err := r.CreateWithMembership(creator, displayName)
+	return created, err
+}
+
+// CreateWithMembership captures the creation result before making the room
+// available to other operations; no subsequent authorized read is necessary.
+func (r *Registry) CreateWithMembership(creator game.PlayerID, displayName string) (*Room, Membership, error) {
 	member, err := newMember(creator, displayName)
 	if err != nil {
-		return nil, err
+		return nil, Membership{}, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return nil, Membership{}, ErrRoomClosed
+	}
+	if len(r.rooms) >= r.maxRooms {
+		return nil, Membership{}, ErrRegistryFull
+	}
 	for attempt := 0; attempt < 16; attempt++ {
 		code, err := r.newCode()
 		if err != nil {
-			return nil, fmt.Errorf("create invitation code: %w", err)
+			return nil, Membership{}, fmt.Errorf("create invitation code: %w", err)
 		}
 		if code == "" {
-			return nil, ErrCodeUnavailable
+			return nil, Membership{}, ErrCodeUnavailable
 		}
 		if _, exists := r.rooms[code]; exists {
 			continue
 		}
 		seed, err := r.newSeed()
 		if err != nil {
-			return nil, fmt.Errorf("create room randomness: %w", err)
+			return nil, Membership{}, fmt.Errorf("create room randomness: %w", err)
+		}
+		id, err := r.newID()
+		if err != nil {
+			return nil, Membership{}, fmt.Errorf("create room identity: %w", err)
 		}
 		room := &Room{
 			registry: r,
+			id:       id, maxMembers: r.maxMembers,
 			code:     code,
 			admin:    creator,
 			revision: 1,
 			members:  []Member{member},
 			rng:      mathrand.New(mathrand.NewSource(seed)),
+			clock:    r.clock,
 		}
+		// This room is unpublished: locking it here cannot invert the existing
+		// room -> registry lock order. Callbacks wait for complete initialization.
+		room.mu.Lock()
+		room.startGraceLocked(creator)
 		r.rooms[code] = room
-		return room, nil
+		membership := room.membershipLocked(creator)
+		room.mu.Unlock()
+		return room, membership, nil
 	}
-	return nil, ErrCodeUnavailable
+	return nil, Membership{}, ErrCodeUnavailable
 }
 
 // Lookup is an in-process lookup for joining or authenticated coordination. It

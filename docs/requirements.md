@@ -63,6 +63,9 @@ A browser-based multiplayer bluffing card game.
 - A player has 60 seconds to reconnect after losing all their connections. Play
   continues during this grace period, but their turn is not skipped. If play
   reaches their turn, it waits for reconnect or expiry.
+- A newly created/joined membership has the same 60 seconds to open its first
+  game connection. Abandoned HTTP joins then follow normal departure handling;
+  repeated HTTP requests do not extend the attachment window.
 - Explicitly leaving or exhausting the grace period withdraws a player from
   participation. Their turn is skipped, but their dealt cards continue to count
   for the current round. They receive no cards in subsequent rounds.

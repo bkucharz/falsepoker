@@ -428,6 +428,22 @@ disconnect, and recover without a browser UI.
 
 **Dependencies:** 0.2, 2.3.
 
+**Status:** complete. Added [protocol.md](protocol.md) with versioned HTTP routes,
+cookie/session and origin rules, membership-only room information, WebSocket
+command/ack/error envelopes, explicit recipient snapshot/bid/card schemas, and
+full-snapshot synchronization. Commands require exact observed game/round/room
+revision; even unrelated lobby changes invalidate a pending command. Duplicate
+outcomes are shared across tabs, retained for five minutes in bounded caches,
+and checked before stale-context validation. HTTP leave retries survive room
+deletion within that window. The contract specifies operational/message limits,
+heartbeat/write deadlines, close reasons, 60-second initial-attachment/reconnect
+grace, permanent departures, replay, and state loss after restart. A worked
+create/join/ready/start/bid/raise/challenge/redeal/win/replay exchange and failure
+table map MVP behavior to the current APIs and required phase 3 integration work.
+Fenced JSON/HTTP bodies, example schemas/privacy/counters, new local links, and the
+worked revisions/turns were checked; `git diff --check` passed. No application
+code or networking was implemented in this task.
+
 **Work:** write `docs/protocol.md` with request/response examples and state schemas.
 
 **Acceptance criteria:**
@@ -448,6 +464,29 @@ to a documented exchange. No networking implementation is part of this PR.
 
 **Dependencies:** 3.1.
 
+**Status:** complete. Added `cmd/server` with configurable loopback listener,
+public origin, explicit local HTTP cookie mode, server timeouts, and signal-driven
+shutdown. `internal/transport` uses the standard library for anonymous sessions,
+HttpOnly/SameSite cookies (Secure by default), exact-origin checks, strict bounded
+JSON input, structured errors, and create/join/member-info/leave HTTP endpoints.
+Sessions and five-minute HTTP retry ledgers are bounded; repeated requests across
+connections reuse the captured outcome without repeating mutations. Idle sessions
+and expired retry records are cleaned up; capacity/ingress failures are explicit.
+Room coordination now supplies lifetime IDs, atomic membership metadata, bounded
+room/member capacity, and retained participant names. Explicit wire DTOs preserve
+recipient hand privacy, string enums/counters, nullable fields, and public results.
+Tests use ephemeral HTTP/TLS servers and controlled time to cover cookies,
+authorization, malformed/spoofed input, duplicate requests, concurrent joins and
+join/leave races, cache/session expiry and capacity, rate limits, and gameplay-view
+privacy across phases/replay. `go test -race -count=1 -cover ./...` passed
+(92.8% transport, 96.3% room, 97.7% engine coverage), as did `go vet ./...`,
+`go mod tidy -diff`, formatting, and `git diff --check`. An actual
+`go run ./cmd/server -dev-http` plus curl smoke test verified health, separate
+sessions, create/retry, join, member read, admin transfer, final leave, and replay
+of that leave after deletion. The README contains local run/curl instructions.
+At completion of 3.2, HTTP memberships ended through explicit leave or restart;
+3.3/3.4 add WebSockets and connection-grace timers. No database or frontend was added.
+
 **Acceptance criteria:**
 
 - Compose the existing domain and room packages in `cmd/server`; add a health endpoint.
@@ -465,6 +504,26 @@ to a documented exchange. No networking implementation is part of this PR.
 ### 3.3 — Add authenticated WebSocket commands and snapshots
 
 **Dependencies:** 3.2.
+
+**Status:** complete. Gorilla WebSocket v1.5.3 supplies framing and connection
+I/O entirely within transport. Upgrades check cookie identity, exact origin,
+subprotocol, membership, room lifetime, and bounded connection capacity. Strict
+commands derive actors from sessions and dispatch through one room operation
+covering retry admission, context/revision checks, mutation, ordered publication,
+and outcome retention. Retries across tabs/rounds/games return the original
+outcome without another mutation. Each connection has a serialized writer,
+bounded queues, message limits, write/read deadlines, and matching Ping/Pong
+heartbeats. Explicit leave and server shutdown terminate associated sockets.
+Real HTTP/TLS/WebSocket clients cover private hands, spectators, all command
+actions, invalid input, turn/context/revision guards, concurrent duplicates and
+conflicts, room isolation, rate/capacity limits, heartbeat renewal/expiry, and
+shutdown. Room tests cover retry retention, admission without eviction, rejected
+outcomes, no-ops, closed subscriptions, and atomic duplicate execution. The README
+includes a browser-console readiness exercise. Grace/first-attachment expiry
+remains in phase 3.4; no UI or persistence was added.
+Verification passed: `go test -race ./internal/transport/... ./internal/room/...`,
+`go test -race -count=1 -cover ./...`, `go test ./...`, `go vet ./...`,
+`go mod tidy -diff`, formatting, and `git diff --check`.
 
 **Acceptance criteria:**
 
@@ -487,6 +546,27 @@ to a documented exchange. No networking implementation is part of this PR.
 
 **Dependencies:** 3.3.
 
+**Status:** complete. Room coordination owns 60-second initial-attachment and
+last-connection grace periods. Atomic attachment cancels expiry and queues a fresh
+recipient snapshot; multiple tabs keep one membership, role, seat and hand.
+Unique grace-period tokens reject stale callbacks across reconnect, later
+disconnects, rejoining and reused room codes. Reads and mutations settle overdue
+deadlines before authorization/admission, including when callbacks are delayed.
+Expiry follows the existing serialized departure path: retain current-round
+cards/bids, skip withdrawn turns, transfer admin/next starter, award a winner when
+one participant remains, and delete an empty room. Occupied lobbies and finished
+rooms have no inactivity expiry. The shared clock controls both elapsed time and
+callback dispatch in tests. Shutdown cancels and joins timers, closes sockets,
+and discards room/session/retry state. Tests cover exact deadline boundaries,
+expiry racing with reconnect/moves, stale/early/dispatched callbacks, slow tabs,
+unchanged private hands and previous-round reveals on reconnect, new spectator
+memberships after expiry, released room capacity, credential expiry, and state
+loss after restart. The README documents attachment deadlines and manual reconnect.
+No UI, storage, additional dependency, or turn timeout was added.
+Verification passed: five repeated race-enabled room/transport runs,
+`go test -race -count=1 -cover ./...`, `go test ./...`, `go vet ./...`,
+`go mod tidy -diff`, formatting, and `git diff --check`.
+
 **Acceptance criteria:**
 
 - Reconnect restores the same player and hand without rejoining or resetting a game.
@@ -508,6 +588,29 @@ to a documented exchange. No networking implementation is part of this PR.
 ### 3.5 — Prove complete games with headless multiplayer clients
 
 **Dependencies:** 3.4.
+
+**Status:** complete. Added an external-package network harness in
+`internal/integration` with ephemeral HTTP/WebSocket servers, anonymous cookie
+jars, client-owned wire types, bounded reader queues, controlled lifecycle time,
+and seed-42 room randomness. All actions use the real protocol; the harness does
+not call engine evaluation or mutate/read private room state. Scenarios complete
+games and replay with explicit/random seats and starters, opening/raised bids,
+independently known true/false challenges, reveal, penalties, elimination and
+winners. They cover former spectators/eliminated players returning as private-hand
+participants, retained reveals after redeal/reconnect, lost challenge outcomes
+retried with the original context, concurrent duplicate/conflicting tabs, cached
+rejections, key conflicts and per-player/per-room retry scope, unauthorized rooms,
+expiry followed by spectator rejoin, and independent shuffle streams/state in
+two rooms. Every incoming payload is inspected; recipient snapshots are compared
+with an authorized observer at each committed revision. Adversarial fixtures
+prove those privacy checks reject exposed hands, undealt cards, credentials and
+incorrect card values. The only application seam is a registry seed-source
+constructor; default server randomness and all game behavior remain unchanged.
+README commands run the scenarios without a browser or separately started server.
+Verification passed: five repeated race-enabled integration runs,
+`go test -v ./internal/integration/... -count=1`, `go test -race ./...`,
+`go test -race -count=1 -cover ./...`, `go vet ./...`, `go mod tidy -diff`,
+formatting, and `git diff --check`. The phase 3 gate is satisfied.
 
 **Acceptance criteria:**
 

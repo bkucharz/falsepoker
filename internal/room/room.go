@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bkucharz/falsepoker/internal/game"
 )
@@ -14,6 +16,14 @@ type Member struct {
 	ID          game.PlayerID
 	DisplayName string
 	Ready       bool
+}
+
+// Membership is detached metadata captured within a membership operation.
+type Membership struct {
+	RoomID   string
+	Code     string
+	PlayerID game.PlayerID
+	Revision uint64
 }
 
 // LobbyState contains membership and public game metadata, with no cards or
@@ -44,6 +54,8 @@ type Room struct {
 	mu          sync.Mutex
 	registry    *Registry
 	code        string
+	id          string
+	maxMembers  int
 	closed      bool
 	admin       game.PlayerID
 	members     []Member
@@ -52,16 +64,41 @@ type Room struct {
 	gameID      uint64
 	revision    uint64
 	subscribers map[*Subscription]struct{}
+	playerNames map[game.PlayerID]string
+	retries     map[game.PlayerID]map[string]commandRecord
+	clock       Clock
+	grace       map[game.PlayerID]*gracePeriod
 }
 
 // Code is an immutable invitation identifier; it does not expose room state.
 func (r *Room) Code() string { return r.code }
+
+// ID identifies this room lifetime, even if its invitation code is later reused.
+func (r *Room) ID() string { return r.id }
 
 // Join adds an initially unready member. During play, new members are spectators.
 // Room membership is not limited to the game's 24 participating players.
 func (r *Room) Join(id game.PlayerID, displayName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
+	return r.joinLocked(id, displayName)
+}
+
+// JoinWithMembership is idempotent for an existing member. It does not rename
+// that member or reset readiness, and returns metadata under the same room lock.
+func (r *Room) JoinWithMembership(id game.PlayerID, displayName string) (Membership, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.settleLocked()
+	err := r.joinLocked(id, displayName)
+	if err != nil && err != ErrAlreadyMember {
+		return Membership{}, false, err
+	}
+	return r.membershipLocked(id), err == nil, nil
+}
+
+func (r *Room) joinLocked(id game.PlayerID, displayName string) error {
 	if r.closed {
 		return ErrRoomClosed
 	}
@@ -72,7 +109,11 @@ func (r *Room) Join(id game.PlayerID, displayName string) error {
 	if r.memberSeat(id) != -1 {
 		return ErrAlreadyMember
 	}
+	if len(r.members) >= r.maxMembers {
+		return ErrRoomFull
+	}
 	r.members = append(r.members, member)
+	r.startGraceLocked(id)
 	r.publishLocked()
 	return nil
 }
@@ -82,6 +123,11 @@ func (r *Room) Join(id game.PlayerID, displayName string) error {
 func (r *Room) SetReady(actor game.PlayerID, ready bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
+	return r.setReadyLocked(actor, ready)
+}
+
+func (r *Room) setReadyLocked(actor game.PlayerID, ready bool) error {
 	seat, err := r.requireMember(actor)
 	if err != nil {
 		return err
@@ -101,6 +147,11 @@ func (r *Room) SetReady(actor game.PlayerID, ready bool) error {
 func (r *Room) Start(actor game.PlayerID, options StartOptions) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
+	return r.startLocked(actor, options)
+}
+
+func (r *Room) startLocked(actor game.PlayerID, options StartOptions) error {
 	if _, err := r.requireMember(actor); err != nil {
 		return err
 	}
@@ -152,6 +203,12 @@ func (r *Room) Start(actor game.PlayerID, options StartOptions) error {
 		return err
 	}
 	r.game = next
+	r.playerNames = make(map[game.PlayerID]string, len(seats))
+	for _, member := range r.members {
+		if member.Ready {
+			r.playerNames[member.ID] = member.DisplayName
+		}
+	}
 	r.gameID++
 	r.publishLocked()
 	return nil
@@ -163,6 +220,25 @@ func (r *Room) Start(actor game.PlayerID, options StartOptions) error {
 func (r *Room) Leave(actor game.PlayerID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
+	return r.leaveLocked(actor)
+}
+
+// LeaveRoom prevents a delayed leave from affecting a reused invitation code.
+func (r *Room) LeaveRoom(actor game.PlayerID, roomID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.settleLocked()
+	if _, err := r.requireMember(actor); err != nil {
+		return err
+	}
+	if roomID != r.id {
+		return ErrStaleRoom
+	}
+	return r.leaveLocked(actor)
+}
+
+func (r *Room) leaveLocked(actor game.PlayerID) error {
 	seat, err := r.requireMember(actor)
 	if err != nil {
 		return err
@@ -183,10 +259,12 @@ func (r *Room) Leave(actor game.PlayerID) error {
 			}
 		}
 	}
+	r.cancelGraceLocked(actor)
 	r.members = slices.Delete(r.members, seat, seat+1)
 	if len(r.members) == 0 {
 		r.closed = true
 		r.registry.remove(r)
+		r.retries, r.playerNames, r.game = nil, nil, nil
 	} else if actor == r.admin {
 		r.admin = r.members[r.rng.Intn(len(r.members))].ID
 	}
@@ -204,6 +282,7 @@ func (r *Room) Leave(actor game.PlayerID) error {
 func (r *Room) Snapshot(actor game.PlayerID) (LobbyState, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.settleLocked()
 	if _, err := r.requireMember(actor); err != nil {
 		return LobbyState{}, err
 	}
@@ -229,6 +308,21 @@ func (r *Room) requireMember(actor game.PlayerID) (int, error) {
 	return seat, nil
 }
 
+// Membership authorizes a metadata read without copying private game state.
+func (r *Room) Membership(actor game.PlayerID) (Membership, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.settleLocked()
+	if _, err := r.requireMember(actor); err != nil {
+		return Membership{}, err
+	}
+	return r.membershipLocked(actor), nil
+}
+
+func (r *Room) membershipLocked(actor game.PlayerID) Membership {
+	return Membership{RoomID: r.id, Code: r.code, PlayerID: actor, Revision: r.revision}
+}
+
 func (r *Room) memberSeat(id game.PlayerID) int {
 	for seat, member := range r.members {
 		if member.ID == id {
@@ -245,9 +339,23 @@ func (r *Room) clearReadiness() {
 }
 
 func newMember(id game.PlayerID, displayName string) (Member, error) {
-	displayName = strings.TrimSpace(displayName)
-	if id == "" || displayName == "" {
+	displayName, err := NormalizeDisplayName(displayName)
+	if id == "" || err != nil {
 		return Member{}, ErrInvalidMember
 	}
 	return Member{ID: id, DisplayName: displayName}, nil
+}
+
+// NormalizeDisplayName defines room name validation shared with transport input.
+func NormalizeDisplayName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if !utf8.ValidString(name) || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 32 {
+		return "", ErrInvalidMember
+	}
+	for _, ch := range name {
+		if unicode.IsControl(ch) {
+			return "", ErrInvalidMember
+		}
+	}
+	return name, nil
 }

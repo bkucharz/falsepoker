@@ -52,6 +52,58 @@ WebSocket:
 - Receive round results
 - Reconnect and synchronize state
 
+The v1 wire contract is specified in [protocol.md](protocol.md). It uses explicit
+transport DTOs, string enums/counters, full recipient snapshots, cookie-bound
+identity, and a room lifetime identifier distinct from the invitation code.
+New commands require the observed room revision; duplicate decisions and revision
+checks share the room's mutation boundary. HTTP and WebSocket retry outcomes have
+bounded five-minute retention. HTTP and WebSocket commands are implemented in
+phases 3.2/3.3; phase 3.4 implements disconnect and initial-attachment grace.
+
+The WebSocket adapter uses [Gorilla WebSocket v1.5.3](https://github.com/gorilla/websocket)
+for its maintained, tested RFC 6455 implementation, read limits, deadlines and
+Ping/Pong support. The standard library has no WebSocket implementation. This is
+the only external backend dependency; its production socket types stay in
+`internal/transport`.
+Each socket has one reader and one writer. The writer handles snapshots,
+acknowledgments, application errors and heartbeat/control replies; Gorilla
+internally serializes its own protocol-error control frames. Compression is off.
+Transport admission reserves process capacity before allocating socket queues.
+
+`Subscription.Execute` rejects closed connections and performs membership,
+duplicate lookup/admission, game/round/revision checks, mutation, publication,
+and outcome retention under the room mutex. The transport parses exact wire
+shapes and fingerprints normalized typed intent; the room stores that fingerprint
+and outcome without knowing JSON or WebSocket types. Retry records are limited
+to 256 per player-room for five minutes, with a combined bound of
+`maxMembers * 256` per room to bound churn from departed identities. Unexpired
+outcomes are never evicted to admit another command. HTTP and WS ingress share
+the session's rate budget, including retries. The lock order is session map,
+individual session, room, registry; room code never calls transport.
+
+## Network verification
+
+`internal/integration` contains a reusable headless-client test harness outside
+the transport package. Tests configure an ephemeral HTTP server, anonymous
+cookie jars, real WebSocket clients and controlled lifecycle time. All membership
+and gameplay actions go through the wire protocol; tests do not mutate rooms or
+read trusted engine state. `NewRegistryWithSeedSource` is the small server-side
+configuration seam for deterministic gameplay randomness. The default registry
+still obtains cryptographic seeds; codes/IDs remain cryptographic, and clients
+cannot choose seeds over the network. Each room owns its seeded generator.
+
+Client-owned wire structs strictly allow expected v1 fields. Every received
+frame is inspected before rendering, dropping an acknowledgment, or advancing a
+scenario. Local visibility checks derive roles from participation and phase;
+recipient snapshots at each committed revision are compared with an authorized
+spectator's cards and public state. Test-only fault fixtures verify those checks
+reject leaks. True/false claims are chosen from observable cards without calling
+the engine evaluator. Lost acknowledgments are simulated deterministically by
+discarding a validated outcome at the client receive boundary, then reconnecting
+and resending the exact original command. This proves retries against later
+state without depending on packet-loss timing. Bounded client queues, deadlines
+for awaited messages and joined readers make failures reproducible and finite.
+
 ## Concurrency
 
 Each room owns its mutable game state.
@@ -76,8 +128,8 @@ readiness, reads, and subscription setup/closure do not increment it. Revisions
 continue across games within one live room; they are not durable or global IDs.
 Both lobby snapshots and recipient views carry the room revision. Gameplay
 commands identify the observed game and round, and reject stale context before
-mutating state. Protocol-level request IDs, retry semantics, and expected-revision
-checks are specified in phase 3.
+mutating state. Socket commands additionally enforce the protocol's expected
+revision and share a room-owned retry ledger across tabs and games.
 
 `Room.Subscribe` registers one connection and queues its initial recipient view
 under the same lock, preventing a missed update between snapshot and subscription.
@@ -86,8 +138,9 @@ Overflow closes that subscription with `ErrSlowSubscriber` and discards its
 backlog; the transport must observe `Done` and close the socket outside the lock.
 Permanent departure closes all subscriptions for that member; room deletion
 closes the remaining subscriptions. Closing one subscription alone does not
-remove membership or withdraw a player. Connection counting and reconnect grace
-are implemented with the transport lifecycle in phase 3.
+remove membership or withdraw a player. Closing the final subscription starts
+reconnect grace; closing one of several tabs does not. Queue overflow uses the
+same last-connection policy.
 
 ## Anonymous sessions and connections
 
@@ -105,6 +158,30 @@ commands; opening a tab does not create another seat or replace existing tabs.
 Start the 60-second reconnect grace period only when the player's last connection
 closes. Reconnecting cancels that expiry; stale timer callbacks must check the
 current disconnected state and timer generation before withdrawing a player.
+For a newly created/joined HTTP membership that has not opened a socket yet, allow
+the same 60 seconds for its first attachment. Repeated HTTP reads/joins do not
+extend that deadline. After expiry, ordinary permanent-departure rules apply.
+
+The server owns an unused room registry and enables its reconnect lifecycle at
+construction. Each disconnected membership has one cancellable timer and an
+absolute server deadline. A unique grace-period object acts as a generation
+token. Attachment cancels that token under the same room lock that registers the
+subscription and queues its initial snapshot. Old callbacks verify the current
+token before acting; they cannot withdraw a reconnected or rejoined member.
+Room reads and mutations settle overdue deadlines first, so a delayed callback
+cannot permit an attachment at/after expiry or a move against expired membership.
+Expiry calls the existing serialized departure path rather than adding another
+implementation of withdrawal or game rules. Connection changes do not themselves
+advance revision; each permanent departure does.
+
+An injectable `room.Clock` supplies `Now` and `AfterFunc`; the real adapter uses
+Go's monotonic time and timers. Tests control elapsed time and callback dispatch
+separately, including callbacks already waiting for the room lock. This replaces
+the earlier time-only transport test hook so sessions and lifecycle share one
+clock. Pure game logic has no timers or networking dependencies. Shutdown stops
+socket admission, closes live sockets with 1001, closes the registry, cancels
+timers, and waits for already-running callbacks and socket goroutines. Registry
+shutdown never waits for callbacks while holding a registry or room lock.
 
 Build views according to game role, independently of admin privileges. Active
 players cannot inspect opponents' hands; all spectators, including eliminated
