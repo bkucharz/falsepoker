@@ -52,6 +52,14 @@ WebSocket:
 - Receive round results
 - Reconnect and synchronize state
 
+The v1 wire contract is specified in [protocol.md](protocol.md). It uses explicit
+transport DTOs, string enums/counters, full recipient snapshots, cookie-bound
+identity, and a room lifetime identifier distinct from the invitation code.
+New commands require the observed room revision; duplicate decisions and revision
+checks share the room's mutation boundary. HTTP and WebSocket retry outcomes have
+bounded five-minute retention. These are phase 3 integration requirements, not
+features already implemented by the phase 2 API.
+
 ## Concurrency
 
 Each room owns its mutable game state.
@@ -105,6 +113,9 @@ commands; opening a tab does not create another seat or replace existing tabs.
 Start the 60-second reconnect grace period only when the player's last connection
 closes. Reconnecting cancels that expiry; stale timer callbacks must check the
 current disconnected state and timer generation before withdrawing a player.
+For a newly created/joined HTTP membership that has not opened a socket yet, allow
+the same 60 seconds for its first attachment. Repeated HTTP reads/joins do not
+extend that deadline. After expiry, ordinary permanent-departure rules apply.
 
 Build views according to game role, independently of admin privileges. Active
 players cannot inspect opponents' hands; all spectators, including eliminated

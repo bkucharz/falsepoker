@@ -428,6 +428,22 @@ disconnect, and recover without a browser UI.
 
 **Dependencies:** 0.2, 2.3.
 
+**Status:** complete. Added [protocol.md](protocol.md) with versioned HTTP routes,
+cookie/session and origin rules, membership-only room information, WebSocket
+command/ack/error envelopes, explicit recipient snapshot/bid/card schemas, and
+full-snapshot synchronization. Commands require exact observed game/round/room
+revision; even unrelated lobby changes invalidate a pending command. Duplicate
+outcomes are shared across tabs, retained for five minutes in bounded caches,
+and checked before stale-context validation. HTTP leave retries survive room
+deletion within that window. The contract specifies operational/message limits,
+heartbeat/write deadlines, close reasons, 60-second initial-attachment/reconnect
+grace, permanent departures, replay, and state loss after restart. A worked
+create/join/ready/start/bid/raise/challenge/redeal/win/replay exchange and failure
+table map MVP behavior to the current APIs and required phase 3 integration work.
+Fenced JSON/HTTP bodies, example schemas/privacy/counters, new local links, and the
+worked revisions/turns were checked; `git diff --check` passed. No application
+code or networking was implemented in this task.
+
 **Work:** write `docs/protocol.md` with request/response examples and state schemas.
 
 **Acceptance criteria:**
