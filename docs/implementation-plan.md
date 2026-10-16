@@ -386,6 +386,26 @@ notifications remain in 2.3; the spectator hold-to-peek control belongs to the U
 
 **Dependencies:** 2.2.
 
+**Status:** complete. Added room-level bid, challenge, and next-round commands
+with game/round context validation. The existing room mutex encloses validation,
+mutation, readiness reset on game completion, revision assignment, and publication.
+Lobby changes and game starts use the same revision/publication path. Revisions
+start at 1 and continue across replays; errors and unchanged readiness do not
+advance them. Member-only subscriptions atomically queue an initial view and
+receive independently owned recipient views in revision order. Each connection
+has a bounded 16-view queue; overflow closes only that subscription, discards its
+backlog, and signals the future transport to close its socket. Close is idempotent;
+departures/deletion clean up subscriptions without treating a closed connection as
+an immediate withdrawal. Earlier phase tests now drive gameplay through the room
+API. Tests cover complete-game/replay behavior, stale context, errors without
+mutation/notification, simultaneous challenges/advancements, conflicting commands,
+concurrent views and subscription setup/closure, ordered revisions, snapshot
+ownership/privacy, role changes, slow subscribers, and independent-room progress.
+Fresh runs of `go test -race ./internal/room/... -cover -count=1`
+(98.4% statement coverage), `go test ./... -count=1`, and `go vet ./...` passed.
+No networking or storage was added; socket I/O, request retries, and connection
+grace timers remain in phase 3.
+
 **Acceptance criteria:**
 
 - Start games and submit game commands through one serialized operation per room.
