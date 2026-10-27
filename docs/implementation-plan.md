@@ -642,8 +642,11 @@ smoke test, then expand its scenarios in 4.3.
 
 **Approved UI decisions:**
 
-- Use English and a clean responsive player-card/grid layout that accommodates
-  up to 24 participants without a fixed poker-table arrangement.
+- Use English and a minimal responsive poker-table screen. Keep active play in
+  one viewport with no page scrolling: opponents sit around a felt table, the
+  player's face-up hand stays at the bottom, primary actions sit above it, and
+  current game information stays in the table center. Put secondary controls in
+  a settings dialog. Scale the table for phones and desktop; never require hover.
 - Establish attractive, coherent mobile screens from the start: consistent
   typography, spacing, colors, readable cards, clear action hierarchy, and obvious
   loading, success, and error feedback. Visual quality is part of phase 4
@@ -660,9 +663,9 @@ smoke test, then expand its scenarios in 4.3.
   alternatives for cards, and touch targets of at least 44 by 44 CSS pixels.
   Suits and state must be understandable without relying on color alone.
 - Check representative phone widths starting at 320 CSS pixels and desktop
-  widths. Core controls require no hover, work with the software keyboard, and
-  cause no horizontal page scrolling. Large rosters can scroll vertically while
-  keeping the current turn and available actions easy to find.
+  widths. Active play fits one viewport without scrolling. Core controls require
+  no hover and work with the software keyboard. Large non-game lobby rosters may
+  scroll vertically.
 
 ### 4.1 — Bootstrap React/TypeScript/Vite and the room lobby
 
@@ -676,8 +679,8 @@ A non-secret expiry marker prevents another tab silently replacing an expired
 session after its cookie is cleared; credentials stay in HttpOnly cookies.
 Separate frontend and browser CI jobs use locked dependencies and local servers.
 See [web/README.md](../web/README.md) for operation, tests, and design decisions.
-Gameplay controls and peeking remain in 4.2; full-game browser recovery and grace
-expiry remain in 4.3. Phone/desktop viewport screenshots have been inspected;
+Gameplay controls and peeking are implemented in 4.2; full-game browser recovery
+and grace expiry remain in 4.3. Phone/desktop viewport screenshots have been inspected;
 physical-phone keyboard/touch checks and a successful GitHub Actions run remain
 manual verification on the next PR.
 
@@ -800,6 +803,24 @@ Run the documented local commands and join from independent browser profiles.
 ### 4.2 — Render gameplay and submit player actions
 
 **Dependencies:** 4.1c.
+
+**Status:** implemented. The active game uses a full-viewport responsive table
+with opponents arranged around the felt, the player's hand at the bottom,
+centered turn/claim/result details, and secondary controls in settings. Added
+authoritative gameplay snapshots for private cards, public hand sizes, turns and
+bids; guided forms submit bids, challenges, and the designated starter's
+next-round action through the existing WebSocket command client. Results,
+revealed cards, eliminations, and winners render from server snapshots.
+Spectator peeks are held with pointer or keyboard input and clear on release,
+cancellation, focus/visibility loss, or snapshot/round/role changes. Finished
+games retain the lobby readiness and admin replay flow. Component coverage
+exercises every bid category and action phase, visibility, permissions, and
+snapshot replacement. A real-browser flow starts a game, checks spectator
+hold-to-peek, bids, challenges, and advances the designated starter.
+Verification passed: `npm --prefix web run typecheck`,
+`npm --prefix web test` (61 cases), `npm --prefix web run build`,
+`npm --prefix web run format:check`, `npm --prefix web run test:e2e` (5 browser
+scenarios), and `go test ./...`.
 
 **Acceptance criteria:**
 

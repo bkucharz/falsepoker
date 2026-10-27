@@ -17,6 +17,41 @@ export interface Player {
   withdrawn: boolean;
   hand: Card[] | null;
 }
+export type BidCategory =
+  | 'high_card'
+  | 'pair'
+  | 'two_pairs'
+  | 'low_straight'
+  | 'high_straight'
+  | 'three_of_a_kind'
+  | 'full_house'
+  | 'flush'
+  | 'four_of_a_kind'
+  | 'straight_flush'
+  | 'royal_straight_flush';
+export interface Bid {
+  category: BidCategory;
+  primary_rank?: string;
+  secondary_rank?: string;
+  suit?: string;
+}
+export interface PlacedBid {
+  player_id: string;
+  bid: Bid;
+}
+export interface RevealedHand {
+  player_id: string;
+  cards: Card[];
+}
+export interface RoundResult {
+  round_id: string;
+  elimination_limit: number;
+  challenged_bid: PlacedBid;
+  challenger_id: string;
+  claim_satisfied: boolean;
+  loser_id: string;
+  revealed_hands: RevealedHand[];
+}
 export interface Game {
   phase: 'playing' | 'finished';
   round_phase: 'bidding' | 'resolution';
@@ -27,8 +62,8 @@ export interface Game {
   current_player_id: string | null;
   players: Player[];
   winner_id: string | null;
-  last_bid: unknown;
-  last_result: unknown;
+  last_bid: PlacedBid | null;
+  last_result: RoundResult | null;
 }
 export interface RoomState {
   room_id: string;
@@ -63,8 +98,8 @@ export interface Command {
   expected_revision: string;
   game_id: string;
   round_id: string;
-  action: 'ready' | 'start';
-  data: { ready: boolean } | StartData;
+  action: 'ready' | 'start' | 'bid' | 'challenge' | 'next_round';
+  data: { ready: boolean } | StartData | { bid: Bid } | Record<string, never>;
 }
 export interface Failure {
   code: string;

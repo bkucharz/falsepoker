@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RoomConnection, ConnectionView } from './connection';
 import { roomPath } from './protocol';
+import { Gameplay } from './Gameplay';
 
 export function Lobby({
   view,
@@ -57,7 +58,7 @@ export function Lobby({
     else onLeave();
   };
   return (
-    <main className="room-layout">
+    <main className={`room-layout ${playing ? 'is-playing' : ''}`}>
       <section className="room-heading">
         <div>
           <p className="eyebrow">YOUR PRIVATE ROOM</p>
@@ -118,7 +119,7 @@ export function Lobby({
           Reconnecting to your room. Actions will return after a fresh update.
         </div>
       )}
-      {view.error && (
+      {view.error && !playing && (
         <div className="notice error" role="alert">
           {view.error}
           {view.errorCode?.startsWith('STALE_') && (
@@ -126,17 +127,18 @@ export function Lobby({
           )}
         </div>
       )}
-      {playing && (
-        <section className="notice game-started" role="status">
-          <strong>Game started · Round {state.game!.round_id}</strong>
-          <p>
-            {state.role === 'participant'
-              ? 'You have a seat in this game.'
-              : 'You’re watching as a spectator.'}
-          </p>
-        </section>
+      {state.game && (
+        <Gameplay
+          state={state}
+          connected={view.status === 'connected'}
+          pending={view.pending}
+          error={view.error}
+          errorCode={view.errorCode}
+          command={command}
+          onLeave={leave}
+        />
       )}
-      <div className="lobby-columns">
+      <div className={`lobby-columns ${playing ? 'game-in-progress' : ''}`}>
         <section className="players-section" aria-labelledby="players-title">
           <div className="section-heading">
             <h2 id="players-title">

@@ -223,12 +223,95 @@ test('phone invitation flow, spectator admin, explicit seats, start, and leave c
     await Promise.all(
       [admin, bob, carol].map((page) =>
         expect(
-          page.getByRole('heading', { name: 'The game is on.' }),
+          page.getByRole('region', { name: 'False Poker game table' }),
         ).toBeVisible(),
       ),
     );
-    await expect(admin.getByText(/watching as a spectator/)).toBeVisible();
-    await expect(bob.getByText(/You have a seat/)).toBeVisible();
+    const started = await admin.evaluate(
+      async () =>
+        (
+          await (
+            await fetch(`/api/v1/rooms/${location.pathname.split('/').at(-1)}`)
+          ).json()
+        ).state,
+    );
+    expect(
+      started.game.players.map((p: { display_name: string }) => p.display_name),
+    ).toEqual(['Carol', 'Bob']);
+    const bobID = started.game.players.find(
+      (p: { display_name: string }) => p.display_name === 'Bob',
+    ).player_id;
+    expect(started.game.starter_id).toBe(bobID);
+    await expect(admin.getByText('Watching the table')).toBeVisible();
+    await expect(bob.getByText('Your hand')).toBeVisible();
+    await expect(
+      admin
+        .getByRole('region', { name: 'False Poker game table' })
+        .getByRole('img'),
+    ).toHaveCount(0);
+    await admin.getByRole('button', { name: 'Open game settings' }).click();
+    const peekAll = admin.getByRole('button', {
+      name: 'Hold to peek at all hands',
+    });
+    await peekAll.dispatchEvent('pointerdown', {
+      button: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+    });
+    await expect(
+      admin
+        .getByRole('region', { name: 'False Poker game table' })
+        .getByRole('img'),
+    ).toHaveCount(2);
+    await peekAll.dispatchEvent('pointerup', {
+      button: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+    });
+    await expect(
+      admin
+        .getByRole('region', { name: 'False Poker game table' })
+        .getByRole('img'),
+    ).toHaveCount(0);
+    await admin.getByRole('button', { name: 'Close settings' }).click();
+
+    await expect(
+      bob.getByRole('button', { name: 'Make a claim' }),
+    ).toBeEnabled();
+    await bob.getByRole('button', { name: 'Make a claim' }).click();
+    await bob.getByRole('button', { name: /Place claim/ }).click();
+    await expect(
+      carol.getByRole('button', { name: 'Challenge' }),
+    ).toBeEnabled();
+    await carol.getByRole('button', { name: 'Challenge' }).click();
+    await Promise.all(
+      [admin, bob, carol].map((page) =>
+        expect(
+          page.getByRole('heading', { name: /The claim was (true|false)/ }),
+        ).toBeVisible(),
+      ),
+    );
+    const resolved = await carol.evaluate(
+      async () =>
+        (
+          await (
+            await fetch(`/api/v1/rooms/${location.pathname.split('/').at(-1)}`)
+          ).json()
+        ).state,
+    );
+    const starterName = resolved.game.players.find(
+      (p: { player_id: string }) =>
+        p.player_id === resolved.game.next_starter_id,
+    ).display_name;
+    const starterPage = starterName === 'Bob' ? bob : carol;
+    await starterPage.getByRole('button', { name: 'Next round' }).click();
+    await Promise.all(
+      [bob, carol].map((page) =>
+        expect(page.getByText('ROUND 2', { exact: true })).toBeVisible(),
+      ),
+    );
     expect(
       await admin.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -239,11 +322,13 @@ test('phone invitation flow, spectator admin, explicit seats, start, and leave c
       fullPage: true,
     });
     await bob.reload();
-    await expect(bob.getByText(/You have a seat/)).toBeVisible();
+    await expect(bob.getByText('Your hand')).toBeVisible();
+    await bob.getByRole('button', { name: 'Open game settings' }).click();
     await bob.getByRole('button', { name: 'Leave room' }).click();
     await expect(bob.getByRole('dialog')).toBeVisible();
     await bob.getByRole('button', { name: 'Stay in room' }).click();
     await expect(bob.getByRole('dialog')).not.toBeVisible();
+    await bob.getByRole('button', { name: 'Open game settings' }).click();
     await bob.getByRole('button', { name: 'Leave room' }).click();
     await bob.getByRole('button', { name: 'Leave game', exact: true }).click();
     await expect(
@@ -260,10 +345,6 @@ test('phone invitation flow, spectator admin, explicit seats, start, and leave c
     expect(
       state.game.players.map((p: { display_name: string }) => p.display_name),
     ).toEqual(['Carol', 'Bob']);
-    const bobID = state.game.players.find(
-      (p: { display_name: string }) => p.display_name === 'Bob',
-    ).player_id;
-    expect(state.game.starter_id).toBe(bobID);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }

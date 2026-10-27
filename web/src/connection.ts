@@ -4,6 +4,7 @@ import {
   counter,
   requestID,
   type Command,
+  type Bid,
   type Message,
   type RoomState,
   type StartData,
@@ -261,6 +262,11 @@ export class RoomConnection {
   }
   command(action: 'ready', data: { ready: boolean }): void;
   command(action: 'start', data: StartData): void;
+  command(action: 'bid', data: { bid: Bid }): void;
+  command(
+    action: 'challenge' | 'next_round',
+    data: Record<string, never>,
+  ): void;
   command(action: Command['action'], data: Command['data']) {
     const state = this.view.state;
     if (!state || this.view.status !== 'connected' || this.intent) return;

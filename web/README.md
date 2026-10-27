@@ -1,7 +1,8 @@
 # False Poker browser client
 
-Phase 4.1 provides the responsive lobby and room connection lifecycle. Gameplay
-cards, bids, challenges, and spectator peek controls follow in phase 4.2.
+Phase 4.1 provides the responsive lobby and room connection lifecycle. Phase 4.2
+adds private cards, guided bids, challenges, round results, and spectator peek
+controls. Phase 4.3 expands full-game recovery and multiplayer browser scenarios.
 
 ## Run locally
 
@@ -75,8 +76,9 @@ npm --prefix web run test:e2e
 Playwright owns local Go/Vite servers and shuts them down afterward. Tests cover
 real cookies/HTTP/WebSockets, independent sessions, concurrent first-time tabs,
 reload restoration, actual WebSocket loss/reconnect, spectator-admin starts,
-explicit seat choices, leave confirmation, and explicit expired-session recovery
-across tabs. A separate mocked protocol fixture checks 24-player layouts at
+explicit seat choices, a complete bid/challenge/next-round cycle, spectator
+hold-to-peek, leave confirmation, and explicit expired-session recovery across
+tabs. A separate mocked protocol fixture checks 24-player layouts at
 320/390/1280px; it is not a substitute for the real-network scenarios. Screenshots
 are written under `web/test-results`, with traces/screenshots retained on failure.
 Full-game recovery, lost-outcome browser scenarios, and real server-grace expiry

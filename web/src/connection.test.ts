@@ -62,7 +62,7 @@ async function connected() {
   client.start();
   await flush();
   const socket = Socket.instances.at(-1)!;
-  socket.snapshot();
+  socket.snapshot(source);
   return socket;
 }
 describe('room connection', () => {
@@ -93,6 +93,55 @@ describe('room connection', () => {
     expect(client.getSnapshot().pending).toBe(true);
     socket.snapshot(room({ revision: '2' }));
     expect(client.getSnapshot().pending).toBe(false);
+  });
+  it('sends bid, challenge, and next-round intents with the observed context', async () => {
+    source = room({
+      revision: '23',
+      game_id: '4',
+      game: {
+        phase: 'playing',
+        round_phase: 'bidding',
+        round_id: '12',
+        elimination_limit: 6,
+        starter_id: 'alice',
+        next_starter_id: null,
+        current_player_id: 'alice',
+        players: [],
+        winner_id: null,
+        last_bid: null,
+        last_result: null,
+      },
+    });
+    const socket = await connected();
+    const checkIntent = (action: string, data: object) => {
+      const sent = JSON.parse(socket.sent.at(-1)!);
+      expect(sent).toMatchObject({
+        type: 'command',
+        room_id: 'r_one',
+        expected_revision: '23',
+        game_id: '4',
+        round_id: '12',
+        action,
+        data,
+      });
+      expect(sent.request_id).toMatch(/^[a-f0-9]{32}$/);
+      expect(sent).not.toHaveProperty('player_id');
+      socket.receive({
+        type: 'error',
+        request_id: sent.request_id,
+        room_id: 'r_one',
+        revision: '23',
+        error: { code: 'OUT_OF_TURN', message: 'Wait', retryable: false },
+      });
+    };
+    const bid = { bid: { category: 'high_card' as const, primary_rank: 'A' } };
+    client.command('bid', bid);
+    checkIntent('bid', bid);
+    client.command('challenge', {});
+    checkIntent('challenge', {});
+    client.command('next_round', {});
+    checkIntent('next_round', {});
+    expect(socket.sent).toHaveLength(3);
   });
   it('never rolls back newer snapshots from older snapshots or acknowledgments', async () => {
     const socket = await connected();

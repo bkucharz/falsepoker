@@ -216,6 +216,26 @@ describe('lobby permissions and choices', () => {
     await user.click(screen.getByRole('button', { name: 'Leave room' }));
     expect(leave).toHaveBeenCalledTimes(2);
   });
+  it('surfaces rejected gameplay commands and asks the player to review stale state', () => {
+    const state = playing();
+    render(
+      <Lobby
+        view={{
+          ...view(state),
+          error: 'The room has changed.',
+          errorCode: 'STALE_STATE',
+        }}
+        command={vi.fn()}
+        onLeave={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The room has changed.',
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Review your choices before trying again.',
+    );
+  });
   it('renders names as text and exposes no player presence or private cards', () => {
     const state = room({
       members: [
