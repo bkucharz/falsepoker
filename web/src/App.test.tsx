@@ -102,6 +102,23 @@ describe('lobby permissions and choices', () => {
       screen.queryByRole('button', { name: /Start game/ }),
     ).not.toBeInTheDocument();
   });
+  it('returns to a clean lobby after exiting a finished game', async () => {
+    const state = playing();
+    state.game!.phase = 'finished';
+    state.game!.round_phase = 'resolution';
+    state.game!.winner_id = 'alice';
+    const user = userEvent.setup();
+    render(<Lobby view={view(state)} command={vi.fn()} onLeave={vi.fn()} />);
+
+    expect(screen.getByRole('heading', { name: 'Alice wins' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Exit to room' }));
+
+    expect(screen.queryByLabelText('False Poker game table')).toBeNull();
+    expect(
+      screen.getByRole('heading', { name: 'One more game?' }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'I’m ready' })).toBeVisible();
+  });
   it('submits independent seat order and first bidder choices', async () => {
     const user = userEvent.setup(),
       command = vi.fn();
@@ -175,6 +192,19 @@ describe('lobby permissions and choices', () => {
     });
     rerender(<Lobby view={view(many)} command={command} onLeave={vi.fn()} />);
     expect(screen.getByRole('button', { name: /Start game/ })).toBeDisabled();
+    rerender(
+      <Lobby
+        view={{ ...view(), status: 'offline' }}
+        command={command}
+        onLeave={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        'You’re offline. Actions are paused until your connection returns.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'I’m ready' })).toBeDisabled();
     rerender(
       <Lobby
         view={{ ...view(), status: 'reconnecting' }}

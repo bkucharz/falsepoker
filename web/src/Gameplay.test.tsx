@@ -158,17 +158,19 @@ describe('gameplay table', () => {
       <Gameplay
         state={state}
         connected={false}
+        connectionStatus="offline"
         pending={false}
         command={command()}
       />,
     );
     expect(screen.getByRole('button', { name: 'Raise claim' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Challenge' })).toBeDisabled();
+    expect(screen.getAllByText('Offline', { exact: true })).toHaveLength(2);
     rerender(<Gameplay state={state} connected pending command={command()} />);
     expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled();
   });
 
-  it('lets spectators peek only while holding an individual seat or the settings control', async () => {
+  it('lets spectators peek while holding a seat or the table control', async () => {
     const state = base();
     state.role = 'spectator';
     state.game!.players[0].hand = [{ rank: '9', suit: 'clubs' }];
@@ -188,15 +190,38 @@ describe('gameplay table', () => {
     expect(
       screen.queryByRole('img', { name: '10 of Hearts' }),
     ).not.toBeInTheDocument();
-    await userEvent
-      .setup()
-      .click(screen.getByRole('button', { name: 'Open game settings' }));
+
+    bob.focus();
+    fireEvent.keyDown(bob, { key: ' ' });
+    expect(
+      screen.getByRole('img', { name: '10 of Hearts' }),
+    ).toBeInTheDocument();
+    fireEvent.keyUp(bob, { key: ' ' });
+    expect(
+      screen.queryByRole('img', { name: '10 of Hearts' }),
+    ).not.toBeInTheDocument();
     const all = screen.getByRole('button', {
       name: 'Hold to peek at all hands',
     });
+    expect(all).toBeVisible();
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Open game settings' }));
+    expect(
+      screen
+        .getByRole('dialog', { name: 'Settings' })
+        .querySelector('[aria-label="Hold to peek at all hands"]'),
+    ).toBeNull();
     fireEvent.pointerDown(all, { button: 0 });
     expect(screen.getByRole('img', { name: '9 of Clubs' })).toBeInTheDocument();
     fireEvent.pointerUp(all);
+    expect(
+      screen.queryByRole('img', { name: '9 of Clubs' }),
+    ).not.toBeInTheDocument();
+    all.focus();
+    fireEvent.keyDown(all, { key: ' ' });
+    expect(screen.getByRole('img', { name: '9 of Clubs' })).toBeInTheDocument();
+    fireEvent.keyUp(all, { key: ' ' });
     expect(
       screen.queryByRole('img', { name: '9 of Clubs' }),
     ).not.toBeInTheDocument();
@@ -260,19 +285,31 @@ describe('gameplay table', () => {
     expect(send).toHaveBeenCalledWith('next_round', {});
   });
 
-  it('shows a winner without game actions and keeps room controls in settings', async () => {
+  it('shows a winner and lets every player exit the finished table', async () => {
     const state = base();
     state.game!.phase = 'finished';
     state.game!.round_phase = 'resolution';
     state.game!.winner_id = 'bob';
     state.game!.next_starter_id = null;
-    render(<Gameplay state={state} pending={false} command={command()} />);
+    const onExitGame = vi.fn();
+    render(
+      <Gameplay
+        state={state}
+        pending={false}
+        command={command()}
+        onExitGame={onExitGame}
+      />,
+    );
     expect(
       screen.getByRole('heading', { name: 'Bob wins' }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Next round' }),
     ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Exit to room' }));
+    expect(onExitGame).toHaveBeenCalledOnce();
     await userEvent
       .setup()
       .click(screen.getByRole('button', { name: 'Open game settings' }));

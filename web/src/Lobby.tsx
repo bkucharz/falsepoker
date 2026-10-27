@@ -22,12 +22,18 @@ export function Lobby({
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [gameplayDismissed, setGameplayDismissed] = useState(false);
   const myself = state.members.find(
     (member) => member.player_id === state.recipient_id,
   )!;
   const admin = state.admin_id === state.recipient_id;
   const playing = state.game?.phase === 'playing';
+  const finished = state.game?.phase === 'finished';
+  const inGameView = (playing || finished) && !gameplayDismissed;
   const disabled = view.status !== 'connected' || view.pending;
+  useEffect(() => {
+    if (playing) setGameplayDismissed(false);
+  }, [playing, state.game_id]);
   const invalidRoster =
     (!shuffle && reviewed !== signature) ||
     (!!firstBidder && !ready.some((m) => m.player_id === firstBidder));
@@ -58,7 +64,7 @@ export function Lobby({
     else onLeave();
   };
   return (
-    <main className={`room-layout ${playing ? 'is-playing' : ''}`}>
+    <main className={`room-layout ${inGameView ? 'is-playing' : ''}`}>
       <section className="room-heading">
         <div>
           <p className="eyebrow">YOUR PRIVATE ROOM</p>
@@ -76,9 +82,16 @@ export function Lobby({
           </p>
         </div>
         <div className="room-actions">
-          <p className="connection-badge" role="status">
+          <p
+            className={`connection-badge ${view.status === 'offline' ? 'is-offline' : ''}`}
+            role="status"
+          >
             Your connection:{' '}
-            {view.status === 'connected' ? 'Connected' : 'Reconnecting'}
+            {view.status === 'connected'
+              ? 'Connected'
+              : view.status === 'offline'
+                ? 'Offline'
+                : 'Reconnecting'}
           </p>
           <button
             className="button ghost"
@@ -116,7 +129,9 @@ export function Lobby({
       )}
       {view.status !== 'connected' && (
         <div className="notice" role="status">
-          Reconnecting to your room. Actions will return after a fresh update.
+          {view.status === 'offline'
+            ? 'You’re offline. Actions are paused until your connection returns.'
+            : 'Reconnecting to your room. Actions will return after a fresh update.'}
         </div>
       )}
       {view.error && !playing && (
@@ -127,15 +142,17 @@ export function Lobby({
           )}
         </div>
       )}
-      {state.game && (
+      {state.game && inGameView && (
         <Gameplay
           state={state}
           connected={view.status === 'connected'}
+          connectionStatus={view.status}
           pending={view.pending}
           error={view.error}
           errorCode={view.errorCode}
           command={command}
           onLeave={leave}
+          onExitGame={() => setGameplayDismissed(true)}
         />
       )}
       <div className={`lobby-columns ${playing ? 'game-in-progress' : ''}`}>

@@ -11,7 +11,7 @@ import {
 } from './protocol';
 
 export type ConnectionStatus =
-  'connecting' | 'connected' | 'reconnecting' | 'unavailable';
+  'connecting' | 'connected' | 'reconnecting' | 'offline' | 'unavailable';
 export interface ConnectionView {
   status: ConnectionStatus;
   state: RoomState | null;
@@ -49,6 +49,24 @@ export class RoomConnection {
   private failures = 0;
   private intent?: Pending;
   private roomID?: string;
+  private readonly onOffline = () => {
+    if (!this.running) return;
+    this.generation++;
+    this.abort?.abort();
+    clearTimeout(this.reconnectTimer);
+    clearTimeout(this.commandTimer);
+    clearTimeout(this.handshakeTimer);
+    const socket = this.socket;
+    this.socket = undefined;
+    socket?.close();
+    this.update({ status: 'offline' });
+  };
+  private readonly onOnline = () => {
+    if (!this.running || this.view.status !== 'offline') return;
+    this.failures = 0;
+    this.update({ status: 'reconnecting' });
+    void this.connect();
+  };
   constructor(
     private code: string,
     roomID?: string,
@@ -69,10 +87,18 @@ export class RoomConnection {
   start() {
     if (this.running) return;
     this.running = true;
+    window.addEventListener('offline', this.onOffline);
+    window.addEventListener('online', this.onOnline);
+    if (!navigator.onLine) {
+      this.update({ status: 'offline' });
+      return;
+    }
     this.update({ status: this.view.state ? 'reconnecting' : 'connecting' });
     void this.connect();
   }
   stop() {
+    window.removeEventListener('offline', this.onOffline);
+    window.removeEventListener('online', this.onOnline);
     this.running = false;
     this.generation++;
     this.abort?.abort();
@@ -98,6 +124,10 @@ export class RoomConnection {
   }
   private retry() {
     if (!this.running) return;
+    if (!navigator.onLine) {
+      this.update({ status: 'offline' });
+      return;
+    }
     this.update({ status: 'reconnecting' });
     clearTimeout(this.reconnectTimer);
     const delay =
@@ -199,6 +229,10 @@ export class RoomConnection {
         clearTimeout(this.handshakeTimer);
         clearTimeout(this.commandTimer);
         this.generation++;
+        if (!navigator.onLine) {
+          this.update({ status: 'offline' });
+          return;
+        }
         if (terminalCloses.has(event.code)) {
           const message =
             event.code === 4001
@@ -221,6 +255,10 @@ export class RoomConnection {
       socket.onerror = () => {};
     } catch (error) {
       if (!this.current(generation)) return;
+      if (!navigator.onLine) {
+        this.update({ status: 'offline' });
+        return;
+      }
       if (error instanceof ApiError && terminalCodes.has(error.code)) {
         this.unavailable(
           error.code,

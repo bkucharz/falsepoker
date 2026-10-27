@@ -48,6 +48,10 @@ let source: RoomState;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal('WebSocket', Socket);
+  Object.defineProperty(navigator, 'onLine', {
+    configurable: true,
+    value: true,
+  });
   Socket.instances = [];
   source = room();
   vi.mocked(roomInfo).mockImplementation(async () => ({ state: source }));
@@ -55,6 +59,10 @@ beforeEach(() => {
 });
 afterEach(() => {
   client.stop();
+  Object.defineProperty(navigator, 'onLine', {
+    configurable: true,
+    value: true,
+  });
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -76,6 +84,56 @@ describe('room connection', () => {
     expect(socket.sent).toHaveLength(0);
     socket.snapshot();
     expect(client.getSnapshot().status).toBe('connected');
+  });
+  it('waits offline without opening a socket and connects when the browser returns online', async () => {
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: false,
+    });
+    client.start();
+    expect(client.getSnapshot().status).toBe('offline');
+    expect(roomInfo).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event('online'));
+    await flush();
+    const socket = Socket.instances[0];
+    expect(socket).toBeDefined();
+    socket.snapshot(source);
+    expect(client.getSnapshot().status).toBe('connected');
+  });
+  it('pauses actions offline and retries the unchanged intent after a fresh snapshot', async () => {
+    const socket = await connected();
+    client.command('ready', { ready: true });
+    const original = socket.sent[0];
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: false,
+    });
+    window.dispatchEvent(new Event('offline'));
+    expect(client.getSnapshot().status).toBe('offline');
+    expect(client.getSnapshot().pending).toBe(true);
+    expect(client.getSnapshot().state?.revision).toBe('1');
+    client.command('ready', { ready: false });
+    expect(socket.sent).toEqual([original]);
+
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    window.dispatchEvent(new Event('online'));
+    await flush();
+    const replacement = Socket.instances.at(-1)!;
+    replacement.snapshot(room({ revision: '2' }));
+    expect(replacement.sent).toEqual([original]);
+    const command = JSON.parse(original);
+    replacement.receive({
+      type: 'ack',
+      request_id: command.request_id,
+      room_id: 'r_one',
+      revision: '2',
+      changed: true,
+    });
+    expect(client.getSnapshot().status).toBe('connected');
+    expect(client.getSnapshot().pending).toBe(false);
   });
   it('waits for the accepted snapshot when ack comes first and guards repeated clicks', async () => {
     const socket = await connected();

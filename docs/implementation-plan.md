@@ -854,6 +854,27 @@ scenarios), and `go test ./...`.
 
 **Dependencies:** 4.2.
 
+**Status:** implemented. Browser coverage now exercises a complete seven-round
+game, loss of a gameplay WebSocket after the server accepts a bid but before its
+acknowledgment reaches the client, exact command replay after reconnect, and
+private-hand restoration. The gameplay table remains visible through the final
+result with a centered exit back to a clean lobby. Explicit browser offline/online
+events pause actions, preserve pending intents, and resume from a fresh snapshot.
+Separate sessions cover late spectators, eliminated viewers, enlarged individual
+seat targets, a table-level all-hands peek control, touch and keyboard holds, and
+a former spectator joining a replay. One browser scenario waits the real
+60-second room grace and checks invitation recovery;
+controlled-clock Go tests continue to cover exact expiry boundaries and races.
+Existing frontend CI runs the expanded scenarios, and Go CI runs the race-enabled
+suite. Physical-phone comfort/keyboard checks remain a manual follow-up because
+browser emulation cannot verify a device's software keyboard or actual touch
+feel.
+
+Verification passed: `npm --prefix web run typecheck`, `npm --prefix web test`
+(64 cases), `npm --prefix web run build`, `npm --prefix web run format:check`,
+`npm --prefix web run test:e2e` (9 Chromium scenarios), `go test -race ./...`,
+and `git diff --check`.
+
 **Acceptance criteria:**
 
 - Refine recovery established in 4.1b: clear reconnecting/offline/unavailable

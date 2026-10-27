@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Settings } from 'lucide-react'
 import type { CSSProperties, RefObject } from 'react';
 import type {
   Bid,
@@ -9,7 +10,7 @@ import type {
   RoomState,
   RoundResult,
 } from './protocol';
-import type { RoomConnection } from './connection';
+import type { ConnectionStatus, RoomConnection } from './connection';
 
 const ranks = ['9', '10', 'J', 'Q', 'K', 'A'];
 const suits = [
@@ -47,21 +48,27 @@ interface PeekState {
 export function Gameplay({
   state,
   connected = true,
+  connectionStatus,
   pending,
   error,
   errorCode,
   command,
   onLeave,
+  onExitGame,
 }: {
   state: RoomState;
   connected?: boolean;
+  connectionStatus?: ConnectionStatus;
   pending: boolean;
   error?: string | null;
   errorCode?: string | null;
   command: RoomConnection['command'];
   onLeave?: () => void;
+  onExitGame?: () => void;
 }) {
   const game = state.game!;
+  const liveStatus =
+    connectionStatus ?? (connected ? 'connected' : 'reconnecting');
   const context = `${state.game_id}:${game.round_id}:${state.role}:${state.revision}`;
   const [peek, setPeek] = useState<PeekState>({ context, ids: [] });
   const [category, setCategory] = useState<BidCategory>('high_card');
@@ -214,16 +221,17 @@ export function Gameplay({
         </div>
         <div className="table-top-status">
           <span className={`connection-dot ${connected ? 'online' : ''}`} />
-          {connected ? 'Connected' : 'Reconnecting'}
+          {liveStatus === 'connected'
+            ? 'Connected'
+            : liveStatus === 'offline'
+              ? 'Offline'
+              : 'Reconnecting'}
         </div>
-        <button
-          className="settings-trigger"
-          type="button"
+        <Settings
+          className='button-icon settings-trigger'
           aria-label="Open game settings"
           onClick={() => setSettingsOpen(true)}
-        >
-          <span aria-hidden="true">⚙</span>
-        </button>
+        />
       </header>
 
       {error && (
@@ -282,7 +290,7 @@ export function Gameplay({
           {winnerName ? (
             <>
               <h1>{winnerName} wins</h1>
-              <p>Ready up for another game in settings.</p>
+              <p>The game is complete.</p>
             </>
           ) : game.round_phase === 'resolution' && result ? (
             <RoundResultSummary result={result} playerName={playerName} />
@@ -312,6 +320,14 @@ export function Gameplay({
               </p>
             </>
           )}
+          {game.phase === 'finished' && (
+            <button
+              className="table-action primary-action finished-exit"
+              onClick={onExitGame}
+            >
+              Exit to room
+            </button>
+          )}
           {game.round_phase === 'bidding' && result && (
             <p className="previous-result">
               Last round:{' '}
@@ -323,6 +339,14 @@ export function Gameplay({
       </div>
 
       <div className="game-actions" aria-label="Available game actions">
+        {canPeek && (
+          <PeekButton
+            id="*"
+            label="Hold to peek at all hands"
+            onHold={setHeld}
+            className="table-peek-button"
+          />
+        )}
         {myTurn ? (
           <>
             <button
@@ -361,15 +385,13 @@ export function Gameplay({
             Waiting for {playerName(game.next_starter_id)} to deal the next
             round
           </p>
-        ) : game.phase === 'finished' ? (
+        ) : game.phase === 'finished' ? null : (
           <p className="action-status">
-            The table is closed. Set up a replay in settings.
-          </p>
-        ) : (
-          <p className="action-status">
-            {connected
-              ? `Waiting for ${currentPlayer}`
-              : 'Reconnecting to the table…'}
+            {liveStatus === 'offline'
+              ? 'Offline — actions are paused.'
+              : connected
+                ? `Waiting for ${currentPlayer}`
+                : 'Reconnecting to the table…'}
           </p>
         )}
       </div>
@@ -419,6 +441,7 @@ export function Gameplay({
         onClose={() => setSettingsOpen(false)}
         state={state}
         connected={connected}
+        connectionStatus={liveStatus}
         invitation={invitation}
         copied={copied}
         copyError={copyError}
@@ -429,8 +452,6 @@ export function Gameplay({
         }}
         result={result}
         playerName={playerName}
-        peekAll={canPeek}
-        onPeek={setHeld}
       />
 
       <dialog
@@ -464,7 +485,13 @@ export function Gameplay({
         <BidForm
           disabled={!canBid}
           statusLabel={
-            pending ? 'Sending…' : connected ? 'Place claim' : 'Reconnecting…'
+            pending
+              ? 'Sending…'
+              : liveStatus === 'offline'
+                ? 'Offline'
+                : connected
+                  ? 'Place claim'
+                  : 'Reconnecting…'
           }
           category={category}
           setCategory={setCategory}
@@ -572,7 +599,7 @@ function OpponentSeat({
         if (event.key === ' ' || event.key === 'Enter') release();
       }}
       onBlur={release}
-    >
+      >
       {content}
     </button>
   );
@@ -726,16 +753,18 @@ function PeekButton({
   id,
   label,
   onHold,
+  className = 'peek-all-button',
 }: {
   id: string;
   label: string;
   onHold: (id: string, held: boolean) => void;
+  className?: string;
 }) {
   const release = () => onHold(id, false);
   return (
     <button
       type="button"
-      className="peek-all-button"
+      className={className}
       aria-label={label}
       onPointerDown={(event) => {
         if (event.button === 0) onHold(id, true);
@@ -779,16 +808,16 @@ function CardFace({
       aria-label={`${card.rank} of ${suit?.[1] ?? card.suit}`}
       role="img"
     >
-      <div className='card-face-symbol regular-symbol'>
+      <div className="card-face-symbol regular-symbol">
         <span>{card.rank}</span>
         <strong aria-hidden="true">{suit?.[2] ?? '?'}</strong>
       </div>
-      {!small && 
-      <div className='card-face-symbol flipped-symbol'>
-        <span>{card.rank}</span>
-        <strong aria-hidden="true">{suit?.[2] ?? '?'}</strong>
-      </div>
-      }
+      {!small && (
+        <div className="card-face-symbol flipped-symbol">
+          <span>{card.rank}</span>
+          <strong aria-hidden="true">{suit?.[2] ?? '?'}</strong>
+        </div>
+      )}
     </span>
   );
 }
@@ -854,6 +883,7 @@ function SettingsDialog({
   onClose,
   state,
   connected,
+  connectionStatus,
   invitation,
   copied,
   copyError,
@@ -861,14 +891,13 @@ function SettingsDialog({
   onLeave,
   result,
   playerName,
-  peekAll,
-  onPeek,
 }: {
   dialogRef: RefObject<HTMLDialogElement | null>;
   open: boolean;
   onClose: () => void;
   state: RoomState;
   connected: boolean;
+  connectionStatus: ConnectionStatus;
   invitation: string;
   copied: boolean;
   copyError: boolean;
@@ -876,8 +905,6 @@ function SettingsDialog({
   onLeave?: () => void;
   result: RoundResult | null;
   playerName: (id: string | null | undefined) => string;
-  peekAll: boolean;
-  onPeek: (id: string, held: boolean) => void;
 }) {
   const [showLink, setShowLink] = useState(false);
   return (
@@ -907,7 +934,11 @@ function SettingsDialog({
       </div>
       <div className="settings-status">
         <span className={`connection-dot ${connected ? 'online' : ''}`} />
-        {connected ? 'Connected to the table' : 'Reconnecting to the table'}
+        {connectionStatus === 'connected'
+          ? 'Connected to the table'
+          : connectionStatus === 'offline'
+            ? 'Offline; actions are paused'
+            : 'Reconnecting to the table'}
       </div>
       <section className="settings-section">
         <h3>Room invitation</h3>
@@ -947,16 +978,6 @@ function SettingsDialog({
           allowed.
         </p>
       </section>
-      {peekAll && (
-        <section className="settings-section">
-          <h3>Spectator view</h3>
-          <PeekButton
-            id="*"
-            label="Hold to peek at all hands"
-            onHold={onPeek}
-          />
-        </section>
-      )}
       {result && (
         <details className="settings-section history-details">
           <summary>Round {result.round_id} reveal</summary>

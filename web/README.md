@@ -52,8 +52,9 @@ npm --prefix web run format:check
 ```
 
 Unit/component tests cover inputs, admin permissions, ready-roster changes,
-confirmation, session bootstrap, lifecycle cleanup, snapshot ordering, terminal
-errors, and bounded retries with original command IDs/envelopes.
+confirmation, session bootstrap, lifecycle cleanup, snapshot ordering, offline
+pause/recovery, terminal errors, and bounded retries with original command
+IDs/envelopes.
 
 Install Chromium once (repeat after Playwright upgrades):
 
@@ -73,16 +74,19 @@ Then stop any manually started servers on ports 8080 and 5173 and run:
 npm --prefix web run test:e2e
 ```
 
-Playwright owns local Go/Vite servers and shuts them down afterward. Tests cover
-real cookies/HTTP/WebSockets, independent sessions, concurrent first-time tabs,
-reload restoration, actual WebSocket loss/reconnect, spectator-admin starts,
-explicit seat choices, a complete bid/challenge/next-round cycle, spectator
-hold-to-peek, leave confirmation, and explicit expired-session recovery across
-tabs. A separate mocked protocol fixture checks 24-player layouts at
-320/390/1280px; it is not a substitute for the real-network scenarios. Screenshots
-are written under `web/test-results`, with traces/screenshots retained on failure.
-Full-game recovery, lost-outcome browser scenarios, and real server-grace expiry
-are extended in phase 4.3. Browser clock changes cannot advance Go server time.
+Playwright owns local Go/Vite servers and shuts them down afterward. The nine
+browser scenarios cover real cookies/HTTP/WebSockets, independent sessions,
+concurrent first-time tabs, reload restoration, browser offline/online recovery,
+actual gameplay socket loss,
+same-command replay after a lost acknowledgment, a complete game to a winner,
+the finished table and centered exit back to a clean lobby, spectator and
+eliminated-viewer peeks with larger seat targets and an on-table all-hands
+control, touch/keyboard use, late joins, replay participation, leave confirmation,
+and the real 60-second server grace.
+A separate mocked protocol fixture checks 24-player layouts at 320/390/1280px;
+it is not a substitute for the real-network scenarios. Screenshots are written
+under `web/test-results`, with traces/screenshots retained on failure. Browser
+clock changes cannot advance Go server time.
 
 Inspect phone and desktop layouts manually, including long names, admin ordering,
 keyboard focus, and phone form entry. Browser viewport emulation does not replace
@@ -114,8 +118,10 @@ another mutation. Uncertain intents live only in memory and are not automaticall
 replayed after reload.
 
 The UI displays only your connection state. Other players' presence and exact
-server reconnect deadlines are not exposed by v1. Private hands are not rendered
-by this lobby increment.
+server reconnect deadlines are not exposed by v1. Active players see their own
+current hand. Spectator hands are rendered only while an individual or all-hands
+peek control is held; public completed-round reveals stay visible until the next
+round changes the table state.
 
 `.github/workflows/frontend-checks.yml` adds separate frontend and Chromium jobs
 alongside existing Go CI, with pinned Node and locked dependencies. CI starts no

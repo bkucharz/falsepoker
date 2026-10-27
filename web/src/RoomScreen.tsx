@@ -73,11 +73,17 @@ export function RoomScreen({
           ♠
         </span>
         <h1>
-          {view.status === 'reconnecting'
-            ? 'Reconnecting…'
-            : 'Opening your room…'}
+          {view.status === 'offline'
+            ? 'You’re offline.'
+            : view.status === 'reconnecting'
+              ? 'Reconnecting…'
+              : 'Opening your room…'}
         </h1>
-        <p>Restoring your seat from the server.</p>
+        <p>
+          {view.status === 'offline'
+            ? 'Connect to the internet to restore your room.'
+            : 'Restoring your seat from the server.'}
+        </p>
         <button className="button ghost" onClick={onHome}>
           Back to home
         </button>
