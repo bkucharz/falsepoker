@@ -183,6 +183,7 @@ describe('gameplay table', () => {
     ).not.toBeInTheDocument();
     const bob = screen.getByRole('button', { name: /Bob, 1 card/ });
     fireEvent.pointerDown(bob, { button: 0 });
+    fireEvent.pointerLeave(bob);
     expect(
       screen.getByRole('img', { name: '10 of Hearts' }),
     ).toBeInTheDocument();
@@ -213,6 +214,7 @@ describe('gameplay table', () => {
         .querySelector('[aria-label="Hold to peek at all hands"]'),
     ).toBeNull();
     fireEvent.pointerDown(all, { button: 0 });
+    fireEvent.pointerLeave(all);
     expect(screen.getByRole('img', { name: '9 of Clubs' })).toBeInTheDocument();
     fireEvent.pointerUp(all);
     expect(

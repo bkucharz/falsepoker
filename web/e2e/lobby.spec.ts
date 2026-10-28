@@ -188,6 +188,7 @@ test('simultaneous first-time tabs share one session and restore membership with
 test('phone invitation flow, spectator admin, explicit seats, start, and leave confirmation', async ({
   browser,
 }) => {
+  test.setTimeout(60_000);
   const contexts = await Promise.all([
     browser.newContext({
       baseURL: 'http://localhost:5173',
@@ -265,6 +266,12 @@ test('phone invitation flow, spectator admin, explicit seats, start, and leave c
     await lateViewer.keyboard.down('Space');
     await expect(lateTable.getByRole('img')).toHaveCount(1);
     await lateViewer.keyboard.up('Space');
+    await expect(lateTable.getByRole('img')).toHaveCount(0);
+    await individualPeek.locator('.opponent-fan').hover();
+    await lateViewer.mouse.down();
+    await lateViewer.mouse.move(5, 5, { steps: 3 });
+    await expect(lateTable.getByRole('img')).toHaveCount(1);
+    await lateViewer.mouse.up();
     await expect(lateTable.getByRole('img')).toHaveCount(0);
     const peekAllLate = lateViewer.getByRole('button', {
       name: 'Hold to peek at all hands',

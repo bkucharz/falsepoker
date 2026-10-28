@@ -1063,8 +1063,14 @@ body:has(.room-layout.is-playing) .site-footer,
 .settings-trigger {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
   font-size: 1rem;
   cursor: pointer;
 }
@@ -1135,16 +1141,13 @@ body:has(.room-layout.is-playing) .site-footer,
   min-height: 88px;
   margin: -10px -12px;
   padding: 10px 12px;
-  border: 1px solid #ffffff1c;
-  background: #0b3d3022;
+  border: 0;
+  background: transparent;
   cursor: pointer;
 }
-.opponent-seat.peekable:active,
-.opponent-seat.peekable:focus-visible {
-  border-color: #f1cc82aa;
-  background: #0b3d3077;
+.opponent-seat.peekable:focus-visible .opponent-avatar {
   outline: 2px solid #f1cc82;
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 .opponent-seat.is-current .opponent-avatar {
   border-color: #f1cc82;
@@ -1234,6 +1237,10 @@ body:has(.room-layout.is-playing) .site-footer,
   transform: translate(-50%, -50%);
   text-align: center;
   scrollbar-width: thin;
+  pointer-events: none;
+}
+.table-center .table-action {
+  pointer-events: auto;
 }
 .round-chip {
   padding: 4px 9px;
@@ -1679,8 +1686,9 @@ body:has(.room-layout.is-playing) .site-footer,
     padding-top: max(4px, env(safe-area-inset-top));
   }
   .settings-trigger {
-    width: 38px;
-    height: 38px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
   }
   .self-card-fan {
     min-height: 58px;

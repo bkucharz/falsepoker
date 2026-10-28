@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Settings } from 'lucide-react'
-import type { CSSProperties, RefObject } from 'react';
+import { Settings } from 'lucide-react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  RefObject,
+} from 'react';
 import type {
   Bid,
   BidCategory,
@@ -227,11 +232,14 @@ export function Gameplay({
               ? 'Offline'
               : 'Reconnecting'}
         </div>
-        <Settings
-          className='button-icon settings-trigger'
+        <button
+          type="button"
+          className="settings-trigger"
           aria-label="Open game settings"
           onClick={() => setSettingsOpen(true)}
-        />
+        >
+          <Settings aria-hidden="true" size={18} />
+        </button>
       </header>
 
       {error && (
@@ -567,7 +575,7 @@ function OpponentSeat({
     </>
   );
   const label = `${player.display_name}, ${active ? `${player.hand_count} ${player.hand_count === 1 ? 'card' : 'cards'}` : player.withdrawn ? 'left the game' : 'eliminated'}${current ? ', current turn' : ''}${canPeek ? '. Hold to peek at hand' : ''}`;
-  const release = () => onHold(player.player_id, false);
+  const holdHandlers = usePeekHold(player.player_id, onHold);
   if (!canPeek) {
     return (
       <div
@@ -583,23 +591,8 @@ function OpponentSeat({
       type="button"
       className={`opponent-seat peekable ${current ? 'is-current' : ''}`}
       aria-label={label}
-      onPointerDown={(event) => {
-        if (event.button === 0) onHold(player.player_id, true);
-      }}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onPointerLeave={release}
-      onKeyDown={(event) => {
-        if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
-          event.preventDefault();
-          onHold(player.player_id, true);
-        }
-      }}
-      onKeyUp={(event) => {
-        if (event.key === ' ' || event.key === 'Enter') release();
-      }}
-      onBlur={release}
-      >
+      {...holdHandlers}
+    >
       {content}
     </button>
   );
@@ -760,32 +753,46 @@ function PeekButton({
   onHold: (id: string, held: boolean) => void;
   className?: string;
 }) {
-  const release = () => onHold(id, false);
+  const holdHandlers = usePeekHold(id, onHold);
   return (
     <button
       type="button"
       className={className}
       aria-label={label}
-      onPointerDown={(event) => {
-        if (event.button === 0) onHold(id, true);
-      }}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onPointerLeave={release}
-      onKeyDown={(event) => {
-        if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
-          event.preventDefault();
-          onHold(id, true);
-        }
-      }}
-      onKeyUp={(event) => {
-        if (event.key === ' ' || event.key === 'Enter') release();
-      }}
-      onBlur={release}
+      {...holdHandlers}
     >
       Hold to peek at all hands
     </button>
   );
+}
+
+function usePeekHold(id: string, onHold: (id: string, held: boolean) => void) {
+  const release = () => onHold(id, false);
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) return;
+      onHold(id, true);
+      if (typeof event.currentTarget.setPointerCapture === 'function') {
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // Some browsers do not allow capture for every pointer type.
+        }
+      }
+    },
+    onPointerUp: release,
+    onPointerCancel: release,
+    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+        event.preventDefault();
+        onHold(id, true);
+      }
+    },
+    onKeyUp: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      if (event.key === ' ' || event.key === 'Enter') release();
+    },
+    onBlur: release,
+  };
 }
 
 function CardFace({
