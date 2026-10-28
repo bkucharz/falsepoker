@@ -913,6 +913,13 @@ servers and document any one-time browser installation in `web`'s README.
 
 **Dependencies:** 4.3.
 
+**Status:** implementation and local-operation documentation are in place. The
+repository README now describes the current browser game, pinned local toolchain,
+run commands, and CI checks; [`web/README.md`](../web/README.md) covers browser
+installation and physical-device guidance. Automated multi-session gameplay,
+disconnect/reconnect, and finished-game flows pass. Physical-phone keyboard/touch
+inspection remains a manual follow-up.
+
 **Acceptance criteria:**
 
 - Refine and audit the mobile/desktop visual quality, accessibility, and feedback
@@ -932,6 +939,10 @@ Follow the README from a clean checkout and record the manual usability checks.
 ### 5.2 — Audit continuous verification and contributor reproducibility
 
 **Dependencies:** 5.1.
+
+**Status:** audited and documented. Existing Go and frontend/browser workflows
+cover the local checks and retain browser failure artifacts. A successful remote
+GitHub Actions run still needs confirmation on the phase 5 pull request.
 
 Basic Go CI is introduced early in `.github/workflows/go-checks.yml`; see
 [ci.md](ci.md). It requires the initialized Go module on every run. Frontend and
