@@ -631,68 +631,274 @@ full UI begins. Debugging multiplayer behavior must not depend on browser screen
 
 ## Phase 4 — Build the browser client incrementally
 
-**Result:** people can play the verified protocol through a usable browser UI.
+**Result:** people can play the verified protocol through an appealing, accessible
+browser UI designed first for mobile phones and usable on desktop.
 
 Frontend tasks establish npm scripts `dev`, `build`, `typecheck`, `test` (a
 noninteractive unit/component run), and `test:e2e` (Playwright). Commit the lockfile.
-The browser-test task must document browser installation and use local test servers.
+Browser tests document browser installation and use local test servers. Add
+frontend CI with the first frontend PR; add browser CI with the first browser
+smoke test, then expand its scenarios in 4.3.
+
+**Approved UI decisions:**
+
+- Use English and a minimal responsive poker-table screen. Keep active play in
+  one viewport with no page scrolling: opponents sit around a felt table, the
+  player's face-up hand stays at the bottom, primary actions sit above it, and
+  current game information stays in the table center. Put secondary controls in
+  a settings dialog. Scale the table for phones and desktop; never require hover.
+- Establish attractive, coherent mobile screens from the start: consistent
+  typography, spacing, colors, readable cards, clear action hierarchy, and obvious
+  loading, success, and error feedback. Visual quality is part of phase 4
+  acceptance, rather than deferred to phase 5.
+- Use guided bid entry with category and applicable rank/suit fields.
+- Spectators have both a hold-to-peek-all control and individual player hold
+  controls. These reveal temporarily, never as persistent toggles.
+- Confirm explicit leave for active participants. Explain withdrawal and its
+  effect on their other tabs in that room. Reload/tab closure uses reconnect
+  grace and must not submit a leave command.
+- Show only the current user's connection status. Do not infer others' presence
+  or show authoritative grace countdowns: the protocol exposes neither.
+- Provide labeled controls, visible keyboard focus, sufficient contrast, text
+  alternatives for cards, and touch targets of at least 44 by 44 CSS pixels.
+  Suits and state must be understandable without relying on color alone.
+- Check representative phone widths starting at 320 CSS pixels and desktop
+  widths. Active play fits one viewport without scrolling. Core controls require
+  no hover and work with the software keyboard. Large non-game lobby rosters may
+  scroll vertically.
 
 ### 4.1 — Bootstrap React/TypeScript/Vite and the room lobby
+
+**Status:** implemented across 4.1a–4.1c. Added `web` with React/TypeScript/Vite,
+a mobile-first visual foundation, create/join/invitation forms, live member and
+readiness views, independent admin seat/starter configuration, and confirmed
+participant leave. The protocol client owns coordinated session bootstrap,
+reload/reconnect restoration, terminal-error recovery, precise snapshot ordering,
+and bounded original-intent retries without client-authoritative game decisions.
+A non-secret expiry marker prevents another tab silently replacing an expired
+session after its cookie is cleared; credentials stay in HttpOnly cookies.
+Separate frontend and browser CI jobs use locked dependencies and local servers.
+See [web/README.md](../web/README.md) for operation, tests, and design decisions.
+Gameplay controls and peeking are implemented in 4.2; full-game browser recovery
+and grace expiry remain in 4.3. Phone/desktop viewport screenshots have been inspected;
+physical-phone keyboard/touch checks and a successful GitHub Actions run remain
+manual verification on the next PR.
+
+Local verification passed: `npm --prefix web ci`, `npm --prefix web run typecheck`,
+`npm --prefix web test` (42 unit/component cases), `npm --prefix web run build`,
+`npm --prefix web run format:check`, and `npm --prefix web run test:e2e` (five
+Chromium scenarios covering real HTTP/WebSockets, shared tabs, reconnect, lobby
+actions, responsive layouts, and explicit expired-session recovery). Also passed
+`go test -race ./...`, `go vet ./...`, and `git diff --check`.
+
+Deliver 4.1a, 4.1b, and 4.1c as separate reviewable PRs. Basic session recovery and
+connection correctness belong here; 4.3 completes the UX and scenario coverage.
+
+#### 4.1a — Frontend foundation and browser integration smoke test
 
 **Dependencies:** Phase 3 gate.
 
 **Acceptance criteria:**
 
-- Add `web` with minimal dependencies, the declared scripts, and local development
-  proxying/configuration for HTTP and WebSockets.
-- Create/join via room code or invitation link, choose a name, show membership and
-  readiness, and start according to the approved policy.
-- Preserve anonymous session ownership without displaying or logging credentials.
-- Display server validation errors and loading/connection states; duplicate clicks
-  do not create duplicate participants or starts.
-- Component tests cover form errors, invitation handling, and lobby permissions.
+- Add `web` with minimal dependencies, the declared scripts, a committed lockfile,
+  and documented Go/Node versions. Establish the approved visual foundation with
+  a responsive application shell and reusable form/button/focus styles.
+- Pin Vite to port 5173 with `strictPort: true`. Proxy relative `/api/v1` HTTP
+  requests and WebSockets to `http://127.0.0.1:8080`, preserving the browser Origin.
+  Do not rewrite WebSocket Origin or relax backend checks.
+- Document the backend command below and consistent use of
+  `http://localhost:5173` for the frontend. Use same-origin cookies; credentials
+  never appear in client storage, URLs, or logs.
+- Add a real-browser smoke test using isolated browser contexts to initialize
+  sessions, create/join through HTTP, and receive initial recipient snapshots over
+  native WebSockets. A test driver may exercise APIs before the lobby UI exists.
+  Verify the actual cookie/proxy/origin path rather than only mocks.
+- Extend CI to run `npm ci`, type checking, unit/component tests, and production
+  builds on PRs alongside Go checks. Run the smoke test in a browser job with
+  required browser installation and local test servers.
 
 **Verification:** `npm --prefix web ci`; `npm --prefix web run typecheck`;
-`npm --prefix web test`; `npm --prefix web run build`.
-Manual smoke test: `go run ./cmd/server` and `npm --prefix web run dev` in separate
-terminals; join the same lobby from independent browser profiles.
+`npm --prefix web test`; `npm --prefix web run build`;
+`npm --prefix web run test:e2e`. Inspect successful frontend/browser CI jobs.
+Document one-time Playwright browser installation in `web/README.md`.
+For local operation, run these commands in separate terminals:
 
-### 4.2 — Render gameplay and submit player actions
+```sh
+go run ./cmd/server -dev-http -origin http://localhost:5173
+npm --prefix web run dev
+```
 
-**Dependencies:** 4.1.
+#### 4.1b — Anonymous session and room connection lifecycle
+
+**Dependencies:** 4.1a.
 
 **Acceptance criteria:**
 
-- Render private cards, public hand sizes, current turn/bid, and legal command forms.
+- Implement a small protocol client separate from presentation components, with
+  session initialization, authenticated room lookup, subscription, connection
+  status, bounded reconnect backoff, and terminal-error handling.
+- Coordinate first-time session bootstrap across tabs, for example using a
+  same-origin Web Lock, and share in-flight initialization within a tab. Test
+  concurrent first-time tabs so requests cannot overwrite the shared cookie.
+- Restore membership by room lookup and WebSocket attachment on reload; do not
+  automatically POST join or create a new identity after expiry. Show an explicit
+  recovery choice when a session or membership is unavailable.
+- Own one room connection per tab. Cleanup closes the socket and cancels retries
+  without leaving the room. Ignore callbacks from replaced connections. Verify
+  React Strict Mode setup/cleanup creates no duplicate mutations or orphaned
+  sockets/timers.
+- After a failed WebSocket handshake, use authenticated HTTP room lookup to help
+  classify session/membership errors: browser events cannot expose the rejected
+  handshake's HTTP status/body. Network failures remain retryable; terminal
+  errors stop retries. Describe `ROOM_UNAVAILABLE` as unavailable room or
+  membership rather than asserting deletion. Never merge a different room
+  lifetime into the current state.
+- Separate authoritative snapshots, pending commands, and form drafts. Each
+  connection's first snapshot establishes its baseline; subsequent snapshots
+  advance revision for that room lifetime. Delayed acknowledgments never replace
+  newer snapshots. Compare decimal-string counters numerically without precision
+  loss and retain strings on the wire.
+- Assign one request ID/idempotency key per user intent. Uncertain retries within
+  the protocol's bounded window reuse the exact original command, including its
+  payload, ID, and context. Do not rewrite revision or generate a new ID just to
+  retry. Beyond the retention window, report an uncertain outcome and require
+  review rather than automatic replay. Stale rejections refresh the view and ask
+  the player to reconsider. Controls wait for the initial snapshot and prevent
+  accidental repeated submission.
+- Unit tests cover cleanup, replaced connections, snapshot/ack ordering, large
+  counters, retry limits, and terminal/transient classification. Browser tests
+  cover reload restoration and simultaneous first-time tabs. Provide a minimal
+  connection view so this increment can be inspected before lobby forms exist.
+
+**Verification:** `npm --prefix web run typecheck`; `npm --prefix web test`;
+`npm --prefix web run build`; `npm --prefix web run test:e2e`.
+
+#### 4.1c — Room forms, lobby, and admin configuration
+
+**Dependencies:** 4.1b.
+
+**Acceptance criteria:**
+
+- Create/join via code or invitation link, choose a name, show membership,
+  readiness, admin identity, and the current user's connection state. Provide
+  explicit leave with the approved confirmation behavior.
+- Admin configures explicit/random seat order and first bidder, and may start
+  while spectating. All ready players participate; require 2–24 ready players
+  and explain invalid counts. Do not invent admin participant-subset selection.
+- Offer keyboard/touch-accessible seat ordering without requiring drag-and-drop.
+  Reconcile configuration when the ready roster changes; stale choices require
+  review before starting. Seat order and first-bidder selection are independent.
+- Display validation errors and loading states; duplicate clicks do not create
+  duplicate memberships or starts. Names are rendered as text.
+- Component tests cover forms, invitations, permissions, changing ready rosters,
+  leave confirmation, and rejected commands. Browser tests verify two independent
+  users joining, readying, configuring, and starting through the actual UI.
+- Manually inspect phone and desktop layouts, including long rosters, readable
+  names, software-keyboard form entry, and touch-friendly admin controls.
+
+**Verification:** `npm --prefix web run typecheck`; `npm --prefix web test`;
+`npm --prefix web run build`; `npm --prefix web run test:e2e`.
+Run the documented local commands and join from independent browser profiles.
+
+### 4.2 — Render gameplay and submit player actions
+
+**Dependencies:** 4.1c.
+
+**Status:** implemented. The active game uses a full-viewport responsive table
+with opponents arranged around the felt, the player's hand at the bottom,
+centered turn/claim/result details, and secondary controls in settings. Added
+authoritative gameplay snapshots for private cards, public hand sizes, turns and
+bids; guided forms submit bids, challenges, and the designated starter's
+next-round action through the existing WebSocket command client. Results,
+revealed cards, eliminations, and winners render from server snapshots.
+Spectator peeks are held with pointer or keyboard input and clear on release,
+cancellation, focus/visibility loss, or snapshot/round/role changes. Finished
+games retain the lobby readiness and admin replay flow. Component coverage
+exercises every bid category and action phase, visibility, permissions, and
+snapshot replacement. A real-browser flow starts a game, checks spectator
+hold-to-peek, bids, challenges, and advances the designated starter.
+Verification passed: `npm --prefix web run typecheck`,
+`npm --prefix web test` (61 cases), `npm --prefix web run build`,
+`npm --prefix web run format:check`, `npm --prefix web run test:e2e` (5 browser
+scenarios), and `go test ./...`.
+
+**Acceptance criteria:**
+
+- Render private cards, public hand sizes, current turn/bid, and guided bid forms
+  with only applicable category/rank/suit fields. Explain the game's combination
+  ordering and that claims concern all dealt cards. Do not restrict bluffing based
+  on the player's own hand; server validation remains authoritative.
 - Submit bids/challenges and phase-advance actions; reconcile to authoritative
   snapshots rather than predicting penalties, dealing, or winners locally.
 - Render revealed round results, elimination, and the terminal winner state.
+- Offer “Next round” only to the designated next starter; admin status does not
+  override this permission. Support readiness and admin configuration for replay.
 - Spectators, including eliminated players, see survivors' current hands only
   while holding a peek control. Test default concealment, press/hold/release,
-  touch cancellation, keyboard use, and loss of focus; active players never
-  receive opponent hands. Public completed-round reveals need no peek hold.
+  touch cancellation, keyboard use, loss of focus, page visibility changes, and
+  snapshot/round/role changes for both peek-all and individual controls. Releasing
+  a control ends its reveal; without any held control, current private hands are
+  absent from visible content and the accessibility tree, rather than merely
+  blurred. Active players never receive opponent hands. Public completed-round
+  reveals remain separate and need no peek hold.
 - Surface rejected/stale commands and prevent accidental repeated submission;
   server validation remains authoritative even if client controls are bypassed.
 - Component tests cover every phase, action errors, and snapshot replacement.
+- Inspect mobile gameplay for clear turn/action hierarchy, readable cards and
+  results, large rosters, and touch operation without hover.
 
 **Verification:** `npm --prefix web run typecheck`; `npm --prefix web test`;
 `npm --prefix web run build`; `go test ./...`.
 
-### 4.3 — Add reconnect UX and complete-browser scenarios
+### 4.3 — Complete recovery UX and multiplayer browser scenarios
 
 **Dependencies:** 4.2.
 
+**Status:** implemented. Browser coverage now exercises a complete seven-round
+game, loss of a gameplay WebSocket after the server accepts a bid but before its
+acknowledgment reaches the client, exact command replay after reconnect, and
+private-hand restoration. The gameplay table remains visible through the final
+result with a centered exit back to a clean lobby. Explicit browser offline/online
+events pause actions, preserve pending intents, and resume from a fresh snapshot.
+Separate sessions cover late spectators, eliminated viewers, enlarged individual
+seat targets, a table-level all-hands peek control, touch and keyboard holds, and
+a former spectator joining a replay. One browser scenario waits the real
+60-second room grace and checks invitation recovery;
+controlled-clock Go tests continue to cover exact expiry boundaries and races.
+Existing frontend CI runs the expanded scenarios, and Go CI runs the race-enabled
+suite. Physical-phone comfort/keyboard checks remain a manual follow-up because
+browser emulation cannot verify a device's software keyboard or actual touch
+feel.
+
+Verification passed: `npm --prefix web run typecheck`, `npm --prefix web test`
+(64 cases), `npm --prefix web run build`, `npm --prefix web run format:check`,
+`npm --prefix web run test:e2e` (9 Chromium scenarios), `go test -race ./...`,
+and `git diff --check`.
+
 **Acceptance criteria:**
 
-- Show reconnecting/offline/expired-room states, retry connections with bounded
-  backoff, and stop retries for terminal session errors.
-- Restore the server snapshot after reconnect; discard stale state and do not
-  blindly replay gameplay actions outside the protocol's retry contract.
+- Refine recovery established in 4.1b: clear reconnecting/offline/unavailable
+  session-or-room messages, explicit recovery choices, and disabled actions while
+  awaiting authoritative state. Show only the user's connection status without
+  unsupported presence badges or expiry countdowns.
+- Verify reconnect snapshots, replaced-connection isolation, stale state rejection,
+  and exact original-command retries after a lost outcome throughout gameplay.
 - Browser tests use isolated sessions to cover a complete game, invitation joins,
   page reload, transient disconnect, simultaneous tabs, and expiry.
+- Verify actual WebSocket loss in disconnect tests; toggling HTTP connectivity
+  alone is insufficient evidence that the socket disconnected.
+- Use one real 60-second server-grace expiry scenario with a suitable test timeout.
+  Browser clock overrides cannot advance the Go server's clock. Keep exact expiry
+  boundaries/races in existing controlled-clock Go tests; do not add production
+  clock-control endpoints or repeat slow expiry waits for every UI case.
 - Verify reveal visibility and role-based new-round hand access, including
   eliminated and late-joining viewers using hold-to-peek, in separate browser
   sessions. Test replay with a former spectator becoming an active player.
+- Exercise both peek controls with touch and keyboard, leave confirmation, and
+  phone/desktop viewports. Manually check a phone-sized viewport through a complete
+  game for visual hierarchy, clarity, and comfort, beyond initial-lobby screenshots.
+- Expand existing browser CI to these scenarios and retain traces or screenshots
+  on failure. Tests require no external services or credentials.
 
 **Verification:** `npm --prefix web run typecheck`; `npm --prefix web test`;
 `npm --prefix web run test:e2e`; `npm --prefix web run build`;
@@ -709,8 +915,9 @@ servers and document any one-time browser installation in `web`'s README.
 
 **Acceptance criteria:**
 
-- Support usable narrow and desktop layouts, labeled keyboard-accessible controls,
-  visible focus, and understandable turn/error/disconnect messages.
+- Refine and audit the mobile/desktop visual quality, accessibility, and feedback
+  already required in phase 4. Check real-phone touch and software-keyboard use
+  where available; fix usability issues found during complete-game playthroughs.
 - Document Go/Node versions, installation, server/frontend commands, test commands,
   configuration, and the in-memory restart limitation.
 - Manually play through two independent browser sessions; include a temporary
@@ -722,13 +929,14 @@ servers and document any one-time browser installation in `web`'s README.
 `go test -race ./...`; `go vet ./...`; `git diff --check`.
 Follow the README from a clean checkout and record the manual usability checks.
 
-### 5.2 — Add minimal continuous verification
+### 5.2 — Audit continuous verification and contributor reproducibility
 
 **Dependencies:** 5.1.
 
 Basic Go CI is introduced early in `.github/workflows/go-checks.yml`; see
 [ci.md](ci.md). It requires the initialized Go module on every run. Frontend and
-browser checks remain part of this task when those components exist.
+browser checks are introduced in 4.1a and expanded in 4.3; this task audits the
+complete workflow rather than postponing their introduction.
 
 **Acceptance criteria:**
 

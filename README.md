@@ -2,7 +2,24 @@
 
 A real-time multiplayer bluffing card game.
 
-## Run locally
+## Browser lobby
+
+The React/TypeScript client now supports room creation, invitation joins, readiness,
+admin configuration, and reconnect. Gameplay controls follow in phase 4.2.
+See [web/README.md](web/README.md) for setup, browser tests, and design decisions.
+
+From the repository root, install dependencies with `npm --prefix web ci`, then
+run these commands in separate terminals:
+
+```sh
+go run ./cmd/server -dev-http -origin http://localhost:5173
+npm --prefix web run dev
+```
+
+Open **http://localhost:5173**. Use independent browser profiles for separate
+players; tabs in one profile share a player.
+
+## Run the backend locally
 
 Install Go 1.27.1 or later. From the repository root:
 
