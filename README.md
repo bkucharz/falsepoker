@@ -65,6 +65,7 @@ requests and pushes to `main`; see [CI documentation](docs/ci.md).
 - [Network protocol](docs/protocol.md)
 - [Implementation plan](docs/implementation-plan.md)
 - [Continuous integration](docs/ci.md)
+- [Deployment guide](docs/deployment.md)
 
 ## Current limits
 

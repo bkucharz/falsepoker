@@ -25,8 +25,9 @@ func main() {
 }
 
 func run() error {
-	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address")
-	origin := flag.String("origin", "http://localhost:8080", "exact public application origin")
+	addr := flag.String("addr", defaultListenAddress(), "HTTP listen address")
+	origin := flag.String("origin", envOr("APP_ORIGIN", "http://localhost:8080"), "exact public application origin")
+	webDir := flag.String("web-dir", os.Getenv("WEB_DIR"), "optional directory containing the built browser application")
 	devHTTP := flag.Bool("dev-http", false, "allow non-Secure cookies for explicit loopback HTTP development")
 	maxRooms := flag.Int("max-rooms", room.DefaultMaxRooms, "maximum live rooms")
 	maxMembers := flag.Int("max-members", room.DefaultMaxMembers, "maximum members per room (at least 24)")
@@ -47,7 +48,11 @@ func run() error {
 		return err
 	}
 	defer handler.Close()
-	server := &http.Server{Addr: *addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	appHandler, err := withWebAssets(handler, *webDir)
+	if err != nil {
+		return err
+	}
+	server := &http.Server{Addr: *addr, Handler: appHandler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	listener, err := net.Listen("tcp", *addr)
@@ -75,4 +80,18 @@ func run() error {
 		}
 		return nil
 	}
+}
+
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func defaultListenAddress() string {
+	if port := os.Getenv("PORT"); port != "" {
+		return net.JoinHostPort("0.0.0.0", port)
+	}
+	return "127.0.0.1:8080"
 }
