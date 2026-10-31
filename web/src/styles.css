@@ -1289,6 +1289,17 @@ body:has(.room-layout.is-playing) .site-footer,
     600 clamp(1rem, 3.4vw, 1.45rem) Georgia,
     serif;
 }
+
+.bid-symbol-red {
+  -webkit-text-stroke: 0.03rem #f4d39b;
+  color: #a3333b;
+}
+
+.bid-symbol-black {
+  -webkit-text-stroke: 0.03rem #f4d39b;
+  color: black;
+}
+
 .center-claim > span:last-child {
   color: #d5e5d9;
   font-size: 0.65rem;

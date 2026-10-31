@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
 import type {
   CSSProperties,
@@ -1020,7 +1020,14 @@ function SettingsDialog({
   );
 }
 
-function describeBid(bid: Bid): string {
+const suitToColor: Record<string, string> = {
+  diamonds: 'red',
+  hearts: 'red',
+  spades: 'black',
+  clubs: 'black',
+};
+
+function describeBid(bid: Bid): React.ReactNode {
   const label = categoryLabels.get(bid.category) ?? bid.category;
   if (
     bid.category === 'high_card' ||
@@ -1030,10 +1037,28 @@ function describeBid(bid: Bid): string {
   )
     return `${label}: ${bid.primary_rank}`;
   if (bid.category === 'two_pairs')
-    return `Two pairs: ${bid.primary_rank}s and ${bid.secondary_rank}s`;
+    return (
+      <>
+        Two pairs: {bid.primary_rank}s and {bid.secondary_rank}s
+      </>
+    );
   if (bid.category === 'full_house')
-    return `Full house: ${bid.primary_rank}s over ${bid.secondary_rank}s`;
-  if (bid.suit)
-    return `${label} of ${suits.find(([value]) => value === bid.suit)?.[1] ?? bid.suit}`;
+    return (
+      <>
+        Full house: {bid.primary_rank}s over {bid.secondary_rank}s
+      </>
+    );
+  if (bid.suit) {
+    const suit = suits.find(([value]) => value === bid.suit);
+    if (!suit) return label;
+    const [name, suit_name, symbol] = suit;
+    return (
+      <>
+        {label} of{' '}
+        <span className={'bid-symbol-' + suitToColor[name]}>{symbol}</span>{' '}
+        {suit_name}
+      </>
+    );
+  }
   return label;
 }
