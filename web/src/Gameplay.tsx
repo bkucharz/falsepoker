@@ -318,7 +318,7 @@ export function Gameplay({
                 <h1>First claim</h1>
               )}
               <p className="table-facts">
-                {game.elimination_limit}-card limit <span>·</span>{' '}
+                {game.elimination_limit - 1}-card limit <span>·</span>{' '}
                 {
                   game.players.filter(
                     (player) => !player.eliminated && !player.withdrawn,
