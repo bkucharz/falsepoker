@@ -265,8 +265,8 @@ export function Gameplay({
             const angle =
               Math.PI / 2 + (delta * Math.PI * 2) / game.players.length;
             const seatStyle = {
-              left: `${50 + Math.cos(angle) * 43}%`,
-              top: `${50 + Math.sin(angle) * 39}%`,
+              left: `${50 + Math.cos(angle) * 40}%`,
+              top: `${50 + Math.sin(angle) * 40}%`,
               width: `${seatWidth}px`,
             } as CSSProperties;
             const visible = handVisible(player.player_id);

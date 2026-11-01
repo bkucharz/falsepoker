@@ -1109,7 +1109,7 @@ body:has(.room-layout.is-playing) .site-footer,
 .opponent-seats {
   position: absolute;
   inset: 0;
-  margin: 0;
+  margin: auto 5%;
   padding: 0;
   list-style: none;
 }
