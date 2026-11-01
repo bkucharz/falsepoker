@@ -269,7 +269,7 @@ export function Gameplay({
               top: `${50 + Math.sin(angle) * 39}%`,
               width: `${seatWidth}px`,
             } as CSSProperties;
-            const visible = active && handVisible(player.player_id);
+            const visible = handVisible(player.player_id);
             const backs = active ? Math.min(player.hand_count, 5) : 0;
             return (
               <li
